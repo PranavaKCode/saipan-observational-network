@@ -849,6 +849,15 @@ function renderMapView() {
     });
     S.map.init();
 
+    /* The coastline mask ships with the radar product, so the risk surface can
+       be clipped to land. Absent until tools/sar_yutu.py has been run, in
+       which case the map simply falls back to the village markers. */
+    if (S.sar && S.sar.land_mask) {
+      S.map.loadLandMask(S.sar.land_mask).then(() => {
+        S.map.drawRiskSurface(S.derived.risk);
+      });
+    }
+
     /* The layer fades itself out past its native resolution. Without saying so,
        a reader who left the toggle on would just see it stop working. */
     S.map.onGibsVisibility = (st) => {
@@ -867,8 +876,10 @@ function renderMapView() {
   }
 
   if (S.map) {
-    /* Radar first: it is background context under the markers, not over them. */
+    /* Radar first: it is background context under the markers, not over them.
+       Then the interpolated risk field, then the point markers on top. */
     S.map.drawSar(S.sar);
+    S.map.drawRiskSurface(S.derived.risk);
     S.map.drawRisk(S.derived.risk);
     S.map.drawReports(S.reports, S.science.report_categories);
     S.map.drawGrid(S.derived.grid, S.island);
@@ -934,7 +945,10 @@ function wireMapControls() {
     b.addEventListener('click', () => {
       const on = !b.classList.contains('active');
       b.classList.toggle('active', on);
-      if (S.map) S.map.toggleGroup(b.dataset.overlay, on);
+      if (S.map) {
+        S.map.toggleGroup(b.dataset.overlay, on);
+        if (b.dataset.overlay === 'risk') S.map.toggleGroup('surface', on);
+      }
       paintLegend();
     });
   });
@@ -984,7 +998,7 @@ function paintLegend() {
   const rows = [];
 
   if (active.includes('risk')) {
-    rows.push('<div class="card-kicker" style="margin-bottom:4px">Flood risk</div>');
+    rows.push('<div class="card-kicker" style="margin-bottom:4px">Flood risk surface</div>');
     for (const r of [0.85, 0.65, 0.45, 0.25, 0.05]) {
       const b = band(r);
       rows.push(`<div class="legend-row"><span class="legend-swatch" style="background:${b.color}"></span>${b.label}</div>`);
@@ -1496,7 +1510,10 @@ function wireScenarioSliders(host) {
       frame = requestAnimationFrame(() => {
         recompute();
         paintScenarioOutputs(host);
-        if (S.map) S.map.drawRisk(S.derived.risk);
+        if (S.map) {
+          S.map.drawRiskSurface(S.derived.risk);
+          S.map.drawRisk(S.derived.risk);
+        }
       });
     });
   });
@@ -1976,6 +1993,7 @@ function wireTheme() {
     render();
     if (S.map) {
       S.map.refreshBasemap();
+      S.map.drawRiskSurface(S.derived.risk);
       S.map.drawRisk(S.derived.risk);
       S.map.drawReports(S.reports, S.science.report_categories);
       S.map.drawGrid(S.derived.grid, S.island);

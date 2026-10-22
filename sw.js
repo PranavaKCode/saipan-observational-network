@@ -16,7 +16,7 @@
                     never silently passes old numbers off as current.
    ========================================================================== */
 
-const VERSION = 'son-v16';
+const VERSION = 'son-v17';
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = VERSION + '-tiles';
 const FEED_CACHE = VERSION + '-feeds';
@@ -43,6 +43,7 @@ const SHELL = [
   'data/science.json',
   'data/sar-yutu.json',
   'data/sar-yutu-change.png',
+  'data/saipan-land-mask.png',
   'app.webmanifest',
   'icons/icon.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',

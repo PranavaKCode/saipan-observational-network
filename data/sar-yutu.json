@@ -17,6 +17,20 @@
     "land_db": -14.0,
     "village_radius_m": 500
   },
+  "land_mask": {
+    "image": "data/saipan-land-mask.png",
+    "bounds": [
+      [
+        15.08,
+        145.67
+      ],
+      [
+        15.3,
+        145.845
+      ]
+    ],
+    "derived_from": "pre-event Sentinel-1 VV above the land threshold, cleaned"
+  },
   "overlay": {
     "shows": "fraction of pixels in a ~210 m neighbourhood exceeding the change threshold, not per-pixel change: isolated hits at 30 m are mostly speckle",
     "image": "data/sar-yutu-change.png",

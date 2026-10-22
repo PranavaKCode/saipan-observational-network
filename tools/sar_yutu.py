@@ -243,7 +243,7 @@ def write_overlay(change_db, shape):
     through. That is both the legible rendering and the more defensible one.
     """
     from PIL import Image
-    from scipy.ndimage import uniform_filter
+    from scipy.ndimage import gaussian_filter
 
     width, height = shape
     mag = np.abs(change_db)
@@ -251,20 +251,27 @@ def write_overlay(change_db, shape):
     changed = np.where(np.isfinite(mag), (mag >= CHANGE_DB).astype('float32'), 0.0)
     land = np.isfinite(mag)
 
-    WINDOW = 7                      # ~210 m at 30 m pixels
-    density = uniform_filter(changed, size=WINDOW, mode='constant', cval=0.0)
+    # Gaussian rather than a box filter: a box leaves visible square edges
+    # where a cluster ends, which reads as blocking rather than as a field.
+    density = gaussian_filter(changed, sigma=2.5, mode='constant', cval=0.0)
     # Normalise by how much land is in the window, so the coast is not dimmed
     # simply for having sea on one side.
-    support = uniform_filter(land.astype('float32'), size=WINDOW, mode='constant', cval=0.0)
+    support = gaussian_filter(land.astype('float32'), sigma=2.5, mode='constant', cval=0.0)
     density = np.where(support > 0.25, density / np.maximum(support, 1e-6), 0.0)
 
     DENSITY_FLOOR = 0.12
     t = np.clip((density - DENSITY_FLOOR) / (0.55 - DENSITY_FLOOR), 0, 1)
     alpha = np.where(density >= DENSITY_FLOOR, 0.30 + 0.65 * t, 0.0)
     alpha[~land] = 0
-    r = (212 + (180 - 212) * t)
-    g = (106 + (33 - 106) * t)
-    b = (31 + (63 - 31) * t)
+    # Four stops carry magnitude far better than a two-stop fade: amber for
+    # a light touch, through orange and red, to deep magenta at the extreme.
+    stops = np.array([[232,158,58],[226,106,38],[206,48,58],[150,28,92]], dtype='float32')
+    ti = np.clip(t, 0, 1) * (len(stops) - 1)
+    lo = np.floor(ti).astype('int32')
+    hi = np.minimum(lo + 1, len(stops) - 1)
+    f = (ti - lo)[..., None]
+    rgb = stops[lo] * (1 - f) + stops[hi] * f
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
 
     rgba = np.zeros((height, width, 4), dtype='uint8')
     rgba[..., 0] = r.astype('uint8')
@@ -274,14 +281,44 @@ def write_overlay(change_db, shape):
 
     img = Image.fromarray(rgba, 'RGBA')
 
-    # Half resolution and quantised. The overlay is read at island zoom where
-    # 60 m is plenty, and a committed asset should not be most of the repo.
-    img = img.resize((width // 2, height // 2), Image.LANCZOS)
-    img = img.quantize(colors=64, method=Image.FASTOCTREE).convert('RGBA')
+    # Full 30 m resolution: this is the layer people zoom into, and halving
+    # it was visibly soft. Quantising keeps it small enough to commit.
+    img = img.quantize(colors=96, method=Image.FASTOCTREE).convert('RGBA')
 
     path = os.path.join(DATA, 'sar-yutu-change.png')
     img.save(path, optimize=True)
     return path, os.path.getsize(path)
+
+
+def write_land_mask(pre_db, shape):
+    """Export the radar-derived coastline as an alpha mask.
+
+    The app needs to know where Saipan actually is, so an interpolated risk
+    surface can be clipped to land instead of bleeding across the lagoon.
+    Deriving it from the pre-event scene costs nothing - the mask is already
+    computed here - and it follows the real coast, not a hand-drawn box.
+    """
+    from PIL import Image
+    from scipy.ndimage import binary_closing, binary_opening, gaussian_filter
+
+    width, height = shape
+    land = np.isfinite(pre_db) & (pre_db > LAND_DB)
+
+    # Close pinholes (wet ground, dark roofs); drop isolated bright pixels at
+    # sea (boats, wave crests) before softening the edge.
+    land = binary_closing(land, structure=np.ones((5, 5)))
+    land = binary_opening(land, structure=np.ones((3, 3)))
+
+    alpha = gaussian_filter(land.astype('float32'), sigma=1.2)
+    alpha = np.clip((alpha - 0.35) / 0.4, 0, 1)
+
+    rgba = np.zeros((height, width, 4), dtype='uint8')
+    rgba[..., :3] = 255
+    rgba[..., 3] = (alpha * 255).astype('uint8')
+
+    path = os.path.join(DATA, 'saipan-land-mask.png')
+    Image.fromarray(rgba, 'RGBA').save(path, optimize=True)
+    return path, os.path.getsize(path), float(land.mean())
 
 
 def main():
@@ -345,6 +382,11 @@ def main():
         island = json.load(f)
     stats = village_stats(island, change_db, post_db, pre_db, transform, shape)
 
+    mask_path, mask_size, mask_frac = write_land_mask(pre_db, shape)
+    print('  land mask ' + os.path.basename(mask_path)
+          + '  ' + str(round(mask_size / 1024)) + ' KB'
+          + '  (' + str(round(mask_frac * 100)) + '% of box)')
+
     png_path, png_size = write_overlay(change_db, shape)
     print(f'\n  overlay {os.path.basename(png_path)}  {png_size / 1024:.0f} KB')
 
@@ -369,6 +411,11 @@ def main():
             'water_db': WATER_DB,
             'land_db': LAND_DB,
             'village_radius_m': VILLAGE_RADIUS_M,
+        },
+        'land_mask': {
+            'image': 'data/saipan-land-mask.png',
+            'bounds': [[BBOX[1], BBOX[0]], [BBOX[3], BBOX[2]]],
+            'derived_from': 'pre-event Sentinel-1 VV above the land threshold, cleaned',
         },
         'overlay': {
             'shows': ('fraction of pixels in a ~210 m neighbourhood exceeding the change '

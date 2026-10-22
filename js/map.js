@@ -19,6 +19,40 @@ import { cartoUrl, CARTO_STYLES } from './config.js';
 
 const ISLAND_VIEW = { center: [15.19, 145.75], zoom: 12 };
 
+/* Surface grid. Coarse enough to interpolate 31 points against 30k cells on
+   every slider frame, fine enough that the browser's own smoothing hides the
+   grid when it is scaled up over the island. */
+const SURFACE_W = 170;
+const SURFACE_H = 214;
+
+/* The band palette as a continuous ramp, so the surface reads as one field
+   with the same vocabulary as the badges and the table. */
+const RISK_STOPS = [
+  [0.00, [25, 150, 120]],
+  [0.18, [228, 178, 58]],
+  [0.35, [240, 138, 68]],
+  [0.55, [232, 86, 74]],
+  [0.75, [196, 36, 86]],
+  [1.00, [150, 20, 80]],
+];
+
+function RISK_RAMP(v) {
+  const x = Math.max(0, Math.min(1, v));
+  for (let i = 1; i < RISK_STOPS.length; i++) {
+    if (x <= RISK_STOPS[i][0]) {
+      const [a, ca] = RISK_STOPS[i - 1];
+      const [b, cb] = RISK_STOPS[i];
+      const t = (x - a) / (b - a || 1);
+      return [
+        Math.round(ca[0] + (cb[0] - ca[0]) * t),
+        Math.round(ca[1] + (cb[1] - ca[1]) * t),
+        Math.round(ca[2] + (cb[2] - ca[2]) * t),
+      ];
+    }
+  }
+  return RISK_STOPS[RISK_STOPS.length - 1][1];
+}
+
 export class SaipanMap {
   constructor(elId, { onVillageClick, onMapClick } = {}) {
     this.el = document.getElementById(elId);
@@ -60,9 +94,10 @@ export class SaipanMap {
     this.map.on('zoomend', () => this.applyGibsVisibility());
     this.applyGibsVisibility();
 
-    for (const name of ['risk', 'reports', 'grid', 'reef', 'infra', 'sar']) {
+    for (const name of ['surface', 'risk', 'reports', 'grid', 'reef', 'infra', 'sar']) {
       this.groups[name] = L.layerGroup();
     }
+    this.groups.surface.addTo(this.map);
     this.groups.risk.addTo(this.map);
     this.groups.reports.addTo(this.map);
 
@@ -235,7 +270,9 @@ export class SaipanMap {
     if (!riskResult) return;
 
     for (const v of riskResult.villages) {
-      const radius = 9 + Math.sqrt(v.pop || 1) * 0.42;
+      /* The surface carries the reading; these are now just anchors you can
+         click, sized by population rather than by risk. */
+      const radius = 4 + Math.sqrt(v.pop || 1) * 0.055;
 
       const bandColor = token(v.band.cssVar, '#888');
 
@@ -243,12 +280,11 @@ export class SaipanMap {
          instead of ringing every village in a hard line. */
       const circle = L.circleMarker([v.lat, v.lon], {
         radius,
-        color: bandColor,
-        weight: v.confirmed ? 2.6 : 1.4,
-        opacity: 0.3 + v.risk * 0.65,
+        color: 'rgba(255,255,255,0.92)',
+        weight: v.confirmed ? 2.2 : 1.1,
+        opacity: 0.9,
         fillColor: bandColor,
-        fillOpacity: 0.08 + v.risk * 0.42,
-        dashArray: v.confirmed ? null : '3 3',
+        fillOpacity: 0.95,
       });
 
       circle.bindPopup(`
@@ -369,6 +405,121 @@ export class SaipanMap {
 
       marker.addTo(this.groups.grid);
     }
+  }
+
+  /* ======================= Risk surface ================================= */
+
+  /**
+   * Load the radar-derived coastline once, as an alpha lookup.
+   *
+   * Thirty-one circles is a sampling of a field, drawn as if it were a set of
+   * objects. The field is the honest picture - risk does not stop at a
+   * village boundary - but an interpolated field drawn over the whole bounding
+   * box bleeds out across the lagoon and looks absurd. The mask is what makes
+   * the surface legitimate: it is clipped to where land actually is, and that
+   * coastline comes from the pre-event Sentinel-1 scene rather than a guess.
+   */
+  async loadLandMask(spec) {
+    if (!spec || this._mask) return this._mask;
+
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = spec.image;
+    }).catch(() => null);
+    if (!img) return null;
+
+    const c = document.createElement('canvas');
+    c.width = SURFACE_W;
+    c.height = SURFACE_H;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, SURFACE_W, SURFACE_H);
+
+    this._mask = {
+      alpha: g.getImageData(0, 0, SURFACE_W, SURFACE_H).data,
+      bounds: spec.bounds,
+    };
+    return this._mask;
+  }
+
+  /**
+   * Interpolate village risk into a continuous surface.
+   *
+   * Gaussian-weighted rather than inverse-distance: IDW puts a bullseye on
+   * every sample point, which looks like 31 targets rather than one field.
+   * A Gaussian kernel at roughly village spacing gives a smooth surface whose
+   * peaks still sit where the villages are.
+   */
+  riskSurface(riskResult) {
+    const mask = this._mask;
+    if (!mask || !riskResult) return null;
+
+    const [[south, west], [north, east]] = mask.bounds;
+    const canvas = document.createElement('canvas');
+    canvas.width = SURFACE_W;
+    canvas.height = SURFACE_H;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(SURFACE_W, SURFACE_H);
+
+    const pts = riskResult.villages.map((v) => ({
+      x: (v.lon - west) / (east - west) * SURFACE_W,
+      y: (north - v.lat) / (north - south) * SURFACE_H,
+      r: v.risk,
+    }));
+
+    /* ~2.2 km, a little over the typical gap between village anchors. */
+    const sigmaPx = 2200 / 111320 / ((north - south) / SURFACE_H);
+    const twoSigmaSq = 2 * sigmaPx * sigmaPx;
+
+    for (let y = 0; y < SURFACE_H; y++) {
+      for (let x = 0; x < SURFACE_W; x++) {
+        const i = (y * SURFACE_W + x) * 4;
+        const land = mask.alpha[i + 3] / 255;
+        if (land < 0.04) continue;
+
+        let wsum = 0;
+        let vsum = 0;
+        for (const p of pts) {
+          const dx = x - p.x;
+          const dy = y - p.y;
+          const w = Math.exp(-(dx * dx + dy * dy) / twoSigmaSq);
+          if (w < 1e-4) continue;
+          wsum += w;
+          vsum += w * p.r;
+        }
+        if (wsum <= 0) continue;
+
+        const value = vsum / wsum;
+        const [r, g, b] = RISK_RAMP(value);
+        img.data[i] = r;
+        img.data[i + 1] = g;
+        img.data[i + 2] = b;
+        /* Below the lowest band the surface stays clear: a calm day should
+           not paint the island, it should leave it alone. */
+        /* A tint over the imagery, not a replacement for it: you should still
+           be able to read the reef, the road grid and where the houses are
+           underneath the reading. */
+        img.data[i + 3] = Math.round(land * 255 * Math.min(0.58, Math.max(0, (value - 0.05)) * 1.15));
+      }
+    }
+
+    ctx.putImageData(img, 0, 0);
+    return canvas.toDataURL('image/png');
+  }
+
+  drawRiskSurface(riskResult) {
+    this.clear('surface');
+    const url = this.riskSurface(riskResult);
+    if (!url || !this._mask) return;
+
+    L.imageOverlay(url, this._mask.bounds, {
+      opacity: 0.88,
+      interactive: false,
+      className: 'risk-surface',
+      alt: 'Interpolated flood risk surface over Saipan',
+    }).addTo(this.groups.surface);
   }
 
   /* ======================= Radar change ================================= */
