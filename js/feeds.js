@@ -34,7 +34,11 @@ export const SAIPAN = {
    pixel value for Saipan when that is wired in. */
 export const CORAL_MMM = 29.3;
 
-const TIMEOUT_MS = 12000;
+/* Open-Meteo's forecast endpoint has been observed answering in ~12s under
+   load. This app is built for connections that are worse than that, so the
+   budget is generous and a slow answer is preferred to no answer. */
+const TIMEOUT_MS = 20000;
+const RETRY_DELAY_MS = 800;
 
 async function fetchJSON(url, opts = {}) {
   const ctrl = new AbortController();
@@ -53,21 +57,38 @@ async function fetchJSON(url, opts = {}) {
 }
 
 /**
- * Network-first with a durable cache fallback.
+ * Network-first with one retry, then a durable cache fallback.
+ *
+ * The retry matters more than it looks. A single timeout on a cold start
+ * leaves the dashboard with nothing to show - there is no cached payload yet
+ * to fall back on - so one slow response blanks the whole view. A second
+ * attempt costs a moment and usually succeeds.
+ *
  * @returns {Promise<{data:any, stale:boolean, at:string|null, error:string|null}>}
  */
 export async function load(key, url, opts = {}) {
-  try {
-    const data = await fetchJSON(url, opts);
-    await cacheSet(key, data);
-    return { data, stale: false, at: new Date().toISOString(), error: null };
-  } catch (err) {
-    const row = await cacheGet(key);
-    if (row) {
-      return { data: row.payload, stale: true, at: row.cached_at, error: String(err.message || err) };
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const data = await fetchJSON(url, opts);
+      await cacheSet(key, data);
+      return { data, stale: false, at: new Date().toISOString(), error: null };
+    } catch (err) {
+      lastError = err;
+      /* Do not retry when the browser is plainly offline: the cache is the
+         right answer and a second wait only delays it. */
+      if (!navigator.onLine) break;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     }
-    return { data: null, stale: true, at: null, error: String(err.message || err) };
   }
+
+  const row = await cacheGet(key);
+  const message = String((lastError && lastError.message) || lastError || 'unavailable');
+  if (row) {
+    return { data: row.payload, stale: true, at: row.cached_at, error: message };
+  }
+  return { data: null, stale: true, at: null, error: message };
 }
 
 /* ========================== Weather ====================================== */
