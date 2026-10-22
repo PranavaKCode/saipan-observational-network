@@ -359,7 +359,7 @@ screenScene({
 screenScene({
   seconds: 4.6, img: '03-map.png',
   heading: 'Risk as a field, not as dots',
-  sub: 'Village risk interpolated across the island and clipped to a radar-derived coastline',
+  sub: 'Village risk interpolated across the island and clipped to the surveyed coastline',
   from: { s: 1.04, x: 0, y: 0 }, to: { s: 1.14, x: -60, y: -40 },
 });
 
@@ -389,7 +389,7 @@ screenScene({
 screenScene({
   seconds: 4.6, img: '09-model.png',
   heading: 'A model trained in the browser',
-  sub: 'Logistic regression over 4,300 days of ERA5 reanalysis, retrained on the device',
+  sub: 'Logistic regression over 3,444 days of ERA5 reanalysis, retrained on the device',
   from: { s: 1.06, x: 0, y: 0 }, to: { s: 1.14, x: -70, y: 30 },
   callout: { x: 1230, y: 250, label: 'Held-out AUC', value: '0', sub: '861 days, strictly later in time', color: 'var(--ok)' },
   counter: { key: 'auc', decimals: 3 },

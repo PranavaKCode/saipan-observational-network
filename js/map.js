@@ -410,7 +410,7 @@ export class SaipanMap {
   /* ======================= Risk surface ================================= */
 
   /**
-   * Load the radar-derived coastline once, as an alpha lookup.
+   * Load the surveyed coastline once, as an alpha lookup.
    *
    * Thirty-one circles is a sampling of a field, drawn as if it were a set of
    * objects. The field is the honest picture - risk does not stop at a
