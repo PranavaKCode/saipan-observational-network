@@ -16,7 +16,7 @@
                     never silently passes old numbers off as current.
    ========================================================================== */
 
-const VERSION = 'son-v13';
+const VERSION = 'son-v15';
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = VERSION + '-tiles';
 const FEED_CACHE = VERSION + '-feeds';
@@ -26,7 +26,7 @@ const MAX_TILES = 1200;
 const SHELL = [
   './',
   'index.html',
-  'css/son.css?v=8',
+  'css/son.css?v=9',
   'js/main.js',
   'js/store.js',
   'js/feeds.js',
@@ -37,9 +37,12 @@ const SHELL = [
   'js/reports.js',
   'js/config.js',
   'js/export.js',
+  'js/demo.js',
   'js/carto-key.js',
   'data/island.json',
   'data/science.json',
+  'data/sar-yutu.json',
+  'data/sar-yutu-change.png',
   'app.webmanifest',
   'icons/icon.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',

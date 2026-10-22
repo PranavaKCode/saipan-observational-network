@@ -1,0 +1,350 @@
+{
+  "event": "Super Typhoon Yutu",
+  "landfall": "2018-10-24/2018-10-25",
+  "measures": "change in Sentinel-1 VV gamma0 backscatter between the two dates",
+  "is_not": "a flood map. For a category 5 landfall this signal is dominated by structural damage and defoliation. The open-water test is reported separately as new_water_fraction and is known to under-count: the post-event scene is 3 days late, and radar water detection fails in dense built-up areas.",
+  "source": {
+    "product": "Sentinel-1 RTC (radiometrically terrain corrected gamma0)",
+    "provider": "Microsoft Planetary Computer, sentinel-1-rtc collection",
+    "pre": "2018-10-16T20:07Z",
+    "post": "2018-10-28T20:07Z",
+    "polarization": "VV",
+    "resolution_m": 30
+  },
+  "thresholds": {
+    "change_db": 3.0,
+    "water_db": -17.0,
+    "land_db": -14.0,
+    "village_radius_m": 500
+  },
+  "overlay": {
+    "image": "data/sar-yutu-change.png",
+    "bounds": [
+      [
+        15.08,
+        145.67
+      ],
+      [
+        15.3,
+        145.845
+      ]
+    ]
+  },
+  "island_wide": {
+    "box_pixel_fraction": 1.0,
+    "land_fraction_of_box": 0.27,
+    "raw_median_change_db": 0.22,
+    "common_mode_removed_db": 0.22,
+    "changed_fraction": 0.0773,
+    "new_water_fraction": 0.021
+  },
+  "method_note": "Village figures are anomalies: the island-wide median change of +0.22 dB is subtracted first. That common mode is most likely saturated ground three days after landfall raising backscatter everywhere, possibly with a radiometric offset between the two products on top. Either way it is not localised storm damage. The median is taken over land only (pre-event gamma0 above -14.0 dB): the analysis box is mostly ocean, sea state changed enormously between a calm pre-event scene and three days after a category 5, and mixing that into the baseline would push every village negative for no physical reason. Sea pixels are excluded from the output entirely.",
+  "villages": [
+    {
+      "id": "marpi",
+      "name": "Marpi",
+      "covered": true,
+      "pixels": 1188,
+      "mean_change_db": -0.11,
+      "mean_abs_change_db": 1.21,
+      "changed_fraction": 0.0471,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "san-roque",
+      "name": "San Roque",
+      "covered": true,
+      "pixels": 972,
+      "mean_change_db": -0.73,
+      "mean_abs_change_db": 1.44,
+      "changed_fraction": 0.0905,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "as-matuis",
+      "name": "As Matuis",
+      "covered": true,
+      "pixels": 1156,
+      "mean_change_db": -0.4,
+      "mean_abs_change_db": 1.22,
+      "changed_fraction": 0.0476,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "achugao",
+      "name": "Achugao",
+      "covered": true,
+      "pixels": 517,
+      "mean_change_db": -0.8,
+      "mean_abs_change_db": 1.5,
+      "changed_fraction": 0.087,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "tanapag",
+      "name": "Tanapag",
+      "covered": true,
+      "pixels": 814,
+      "mean_change_db": -0.65,
+      "mean_abs_change_db": 1.35,
+      "changed_fraction": 0.0762,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "as-teo",
+      "name": "As Teo",
+      "covered": true,
+      "pixels": 1122,
+      "mean_change_db": -0.43,
+      "mean_abs_change_db": 1.3,
+      "changed_fraction": 0.0606,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "talafofo",
+      "name": "Talafofo",
+      "covered": true,
+      "pixels": 1092,
+      "mean_change_db": -0.14,
+      "mean_abs_change_db": 1.2,
+      "changed_fraction": 0.0513,
+      "new_water_fraction": 0.0009
+    },
+    {
+      "id": "capitol-hill",
+      "name": "Capitol Hill",
+      "covered": true,
+      "pixels": 1122,
+      "mean_change_db": -0.23,
+      "mean_abs_change_db": 1.35,
+      "changed_fraction": 0.0758,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "lower-base",
+      "name": "Lower Base",
+      "covered": true,
+      "pixels": 932,
+      "mean_change_db": -0.08,
+      "mean_abs_change_db": 1.58,
+      "changed_fraction": 0.1212,
+      "new_water_fraction": 0.0021
+    },
+    {
+      "id": "sadog-tasi",
+      "name": "Sadog Tasi",
+      "covered": true,
+      "pixels": 1009,
+      "mean_change_db": 0.23,
+      "mean_abs_change_db": 1.6,
+      "changed_fraction": 0.1397,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "puerto-rico",
+      "name": "Puerto Rico",
+      "covered": true,
+      "pixels": 1122,
+      "mean_change_db": -0.48,
+      "mean_abs_change_db": 1.46,
+      "changed_fraction": 0.0873,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "navy-hill",
+      "name": "Navy Hill",
+      "covered": true,
+      "pixels": 1156,
+      "mean_change_db": -0.32,
+      "mean_abs_change_db": 1.28,
+      "changed_fraction": 0.0571,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "garapan",
+      "name": "Garapan",
+      "covered": true,
+      "pixels": 1122,
+      "mean_change_db": -0.71,
+      "mean_abs_change_db": 1.47,
+      "changed_fraction": 0.1061,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "gualo-rai",
+      "name": "Gualo Rai",
+      "covered": true,
+      "pixels": 1156,
+      "mean_change_db": -0.21,
+      "mean_abs_change_db": 1.36,
+      "changed_fraction": 0.0848,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "oleai",
+      "name": "Oleai (San Jose)",
+      "covered": true,
+      "pixels": 921,
+      "mean_change_db": 0.16,
+      "mean_abs_change_db": 1.59,
+      "changed_fraction": 0.1249,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "chalan-laulau",
+      "name": "Chalan Laulau",
+      "covered": true,
+      "pixels": 1156,
+      "mean_change_db": -0.16,
+      "mean_abs_change_db": 1.23,
+      "changed_fraction": 0.0493,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "fina-sisu",
+      "name": "Fina Sisu",
+      "covered": true,
+      "pixels": 1122,
+      "mean_change_db": -0.08,
+      "mean_abs_change_db": 1.28,
+      "changed_fraction": 0.0588,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "susupe",
+      "name": "Susupe",
+      "covered": true,
+      "pixels": 1080,
+      "mean_change_db": -0.2,
+      "mean_abs_change_db": 1.56,
+      "changed_fraction": 0.1167,
+      "new_water_fraction": 0.0009
+    },
+    {
+      "id": "chalan-piao",
+      "name": "Chalan Piao",
+      "covered": true,
+      "pixels": 983,
+      "mean_change_db": 0.29,
+      "mean_abs_change_db": 1.78,
+      "changed_fraction": 0.1831,
+      "new_water_fraction": 0.002
+    },
+    {
+      "id": "chalan-kanoa",
+      "name": "Chalan Kanoa",
+      "covered": true,
+      "pixels": 1085,
+      "mean_change_db": 0.31,
+      "mean_abs_change_db": 1.78,
+      "changed_fraction": 0.1797,
+      "new_water_fraction": 0.0018
+    },
+    {
+      "id": "afetna",
+      "name": "Afetna",
+      "covered": true,
+      "pixels": 1155,
+      "mean_change_db": 0.84,
+      "mean_abs_change_db": 1.67,
+      "changed_fraction": 0.1489,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "san-antonio",
+      "name": "San Antonio",
+      "covered": true,
+      "pixels": 766,
+      "mean_change_db": 0.6,
+      "mean_abs_change_db": 1.97,
+      "changed_fraction": 0.2167,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "koblerville",
+      "name": "Koblerville",
+      "covered": true,
+      "pixels": 1152,
+      "mean_change_db": 0.57,
+      "mean_abs_change_db": 1.57,
+      "changed_fraction": 0.1372,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "as-lito",
+      "name": "As Lito",
+      "covered": true,
+      "pixels": 1155,
+      "mean_change_db": 0.13,
+      "mean_abs_change_db": 1.37,
+      "changed_fraction": 0.0771,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "dandan",
+      "name": "Dandan",
+      "covered": true,
+      "pixels": 1155,
+      "mean_change_db": 0.16,
+      "mean_abs_change_db": 1.35,
+      "changed_fraction": 0.0719,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "san-vicente",
+      "name": "San Vicente",
+      "covered": true,
+      "pixels": 1122,
+      "mean_change_db": -0.11,
+      "mean_abs_change_db": 1.42,
+      "changed_fraction": 0.0927,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "as-perdido",
+      "covered": false,
+      "pixels": 0
+    },
+    {
+      "id": "kagman",
+      "name": "Kagman I-III",
+      "covered": true,
+      "pixels": 1105,
+      "mean_change_db": 0.09,
+      "mean_abs_change_db": 1.28,
+      "changed_fraction": 0.0715,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "papago",
+      "name": "Papago",
+      "covered": true,
+      "pixels": 1072,
+      "mean_change_db": -0.11,
+      "mean_abs_change_db": 1.23,
+      "changed_fraction": 0.056,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "laolao",
+      "name": "Laolao",
+      "covered": true,
+      "pixels": 1067,
+      "mean_change_db": 0.36,
+      "mean_abs_change_db": 1.38,
+      "changed_fraction": 0.0825,
+      "new_water_fraction": 0.0
+    },
+    {
+      "id": "obyan",
+      "name": "Obyan / Isley",
+      "covered": true,
+      "pixels": 1070,
+      "mean_change_db": 0.04,
+      "mean_abs_change_db": 1.3,
+      "changed_fraction": 0.071,
+      "new_water_fraction": 0.0028
+    }
+  ],
+  "generated": "2026-10-22"
+}

@@ -1089,6 +1089,8 @@ button.list-item:active { transform: scale(0.995); }
    ========================================================================== */
 
 .crisis-banner { border-color: var(--watch); background: var(--watch-bg); }
+.demo-banner { border-color: var(--crit); background: var(--crit-bg); }
+.demo-banner p { color: var(--text-2); font-size: 0.8125rem; }
 .crisis-banner p { color: var(--text-2); font-size: 0.8125rem; }
 
 body.crisis .topbar { box-shadow: 0 1px 0 var(--watch), 0 10px 18px -16px rgba(0, 0, 0, 0.45); }

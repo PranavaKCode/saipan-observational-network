@@ -17,6 +17,7 @@ import {
 import { aggregate, reliability, restoreExpectation, STATUS } from './grid.js';
 import { loadCartoKey } from './config.js';
 import { exportCsv, exportJson, openSitrep } from './export.js';
+import { buildDemoReports, DEMO_STORY } from './demo.js';
 import { SaipanMap, nearestVillage } from './map.js';
 import { allReports, putReport, uuid, observerId, pendingReports, storageEstimate, clearAllLocal, metaSet, metaGet } from './store.js';
 import { openComposer, resolveReport, renderReportList, flushQueue, syncEndpoint, setSyncEndpoint } from './reports.js';
@@ -32,6 +33,7 @@ import {
 const S = {
   island: null,
   science: null,
+  sar: null,
   feeds: { weather: null, marine: null, forecast: null, alerts: null, quakes: null },
   derived: { dhw: null, features: null, risk: null, ici: null, grid: null, rel: null },
   model: null,
@@ -63,6 +65,9 @@ async function boot() {
     ]);
     S.island = island;
     S.science = science;
+
+    /* Optional: absent if tools/sar_yutu.py has not been run. */
+    S.sar = await fetch('data/sar-yutu.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   } catch (err) {
     document.getElementById('view-pulse').innerHTML =
       `<div class="card"><h2>Could not load island data</h2><p>${escapeHtml(err.message)}</p></div>`;
@@ -76,6 +81,12 @@ async function boot() {
   document.body.classList.toggle('crisis', S.crisis);
 
   S.reports = await allReports();
+
+  /* Keep the demo coherent across a reload. Without this the reports still
+     describe a storm while the model re-scores against a calm live day, and
+     the risk map goes blank underneath the flooding reports. */
+  if (S.reports.some((r) => r.demo)) S.scenario = 'trop';
+
   render();                      // paint the shell immediately
   switchView('pulse');           // same arrival treatment as any other view
 
@@ -432,6 +443,18 @@ function renderPulse() {
       <p class="lede">Saipan, ${localTime(new Date().toISOString())} ChST &middot; live feeds with offline fallback</p>
     </div>
 
+    ${S.reports.some((r) => r.demo) ? `
+      <div class="card demo-banner">
+        <div class="card-head">
+          <span style="color:var(--crit)">${icon('info', 18)}</span>
+          <h2>Demo scenario loaded</h2>
+          <button class="btn btn-sm btn-ghost" id="demo-off">Remove</button>
+        </div>
+        <p style="margin:0">${escapeHtml(DEMO_STORY)} Every report below is synthetic and tagged
+        as demo data. Conditions, satellite imagery, the radar layer and the trained model are
+        real and unaffected.</p>
+      </div>` : ''}
+
     ${S.crisis ? `
       <div class="card crisis-banner">
         <div class="card-head">
@@ -554,6 +577,9 @@ function renderPulse() {
       NASA EOSDIS GIBS imagery. Coral alert levels follow NOAA Coral Reef Watch thresholds
       against a ${CORAL_MMM}&deg;C monthly maximum.
     </div>`;
+
+  const demoOff = host.querySelector('#demo-off');
+  if (demoOff) demoOff.addEventListener('click', () => purgeDemo());
 
   const crisisOff = host.querySelector('#crisis-off');
   if (crisisOff) crisisOff.addEventListener('click', () => setCrisis(false));
@@ -754,6 +780,7 @@ function renderMapView() {
               <button class="chip active" data-overlay="reports">Reports</button>
               <button class="chip" data-overlay="grid">Utilities</button>
               <button class="chip" data-overlay="reef">Reef sites</button>
+              ${S.sar ? '<button class="chip" data-overlay="sar">Yutu radar</button>' : ''}
             </div>
           </div>
           <div class="map-panel">
@@ -837,6 +864,7 @@ function renderMapView() {
     S.map.drawReports(S.reports, S.science.report_categories);
     S.map.drawGrid(S.derived.grid, S.island);
     S.map.drawReefs(S.science.reef_sites, S.derived.dhw ? S.derived.dhw.alert.level : 0);
+    S.map.drawSar(S.sar);
     paintLegend();
   }
 }
@@ -959,6 +987,12 @@ function paintLegend() {
     for (const k of ['up', 'reported', 'degraded', 'down', 'unknown']) {
       rows.push(`<div class="legend-row"><span class="legend-swatch" style="background:${STATUS[k].color}"></span>${STATUS[k].label}</div>`);
     }
+  }
+  if (active.includes('sar')) {
+    rows.push('<div class="card-kicker" style="margin:6px 0 4px">Yutu radar change</div>');
+    rows.push('<div class="legend-row"><span class="legend-swatch" style="background:#d46a1f"></span>3 dB anomaly</div>');
+    rows.push('<div class="legend-row"><span class="legend-swatch" style="background:#b4213f"></span>12 dB or more</div>');
+    rows.push('<div class="legend-row" style="margin-top:3px;opacity:.75">Surface change, not flooding</div>');
   }
   if (active.includes('reports')) {
     rows.push('<div class="legend-row" style="margin-top:6px;opacity:.75">Hollow marker = queued offline</div>');
@@ -1722,7 +1756,7 @@ function renderGridView() {
         </div>` : `
         ${emptyState('No outage history yet. File power or water reports and the record builds itself.', 'clock')}
         <button class="btn btn-sm btn-ghost btn-block" style="margin-top:10px" id="load-demo">
-          ${icon('users', 13)} Load a labelled demo week
+          ${icon('users', 13)} Load the demo scenario
         </button>
         <div class="source-note">
           The demo week injects clearly marked synthetic reports so the aggregation, confidence
@@ -1736,7 +1770,7 @@ function renderGridView() {
   });
 
   const demo = host.querySelector('#load-demo');
-  if (demo) demo.addEventListener('click', loadDemoWeek);
+  if (demo) demo.addEventListener('click', loadDemoScenario);
 
   wireViewButtons(host);
 }
@@ -1753,88 +1787,35 @@ function dotFor(status) {
    Demo data - clearly labelled, one-tap purge
    ========================================================================== */
 
-async function loadDemoWeek() {
-  const villages = S.island.villages;
-  const now = Date.now();
-  const rows = [];
-
-  const pick = (id) => villages.find((v) => v.id === id) || villages[0];
-
-  /* Three episodes shaped like the patterns CUC outages actually follow:
-     a feeder-wide event, a localised water main break, and a single
-     uncorroborated report that should NOT show as an outage. */
-  const episodes = [
-    /* Closed history, so the reliability record has something to compute from. */
-    { villages: ['garapan', 'oleai', 'gualo-rai', 'chalan-laulau', 'fina-sisu'], cat: 'power', startH: 86, lenH: 3.5, observers: 3 },
-    { villages: ['dandan', 'as-perdido'], cat: 'water', startH: 52, lenH: 6, observers: 2 },
-    { villages: ['kagman'], cat: 'power', startH: 30, lenH: 2, observers: 2 },
-    { villages: ['susupe'], cat: 'power', startH: 14, lenH: 1, observers: 1 },
-
-    /* Still running, so the live status map has something to show: a
-       corroborated feeder-wide power event with knock-on water loss. */
-    { villages: ['kagman', 'papago', 'laolao', 'talafofo'], cat: 'power', startH: 2.4, open: true, observers: 2 },
-    { villages: ['kagman'], cat: 'water', startH: 1.8, open: true, observers: 2, pressure: 'Low pressure' },
-
-    /* One uncorroborated report. This must read as "single report", NOT as a
-       confirmed outage - it is the case the corroboration rule exists for. */
-    { villages: ['koblerville'], cat: 'power', startH: 0.6, open: true, observers: 1 },
-  ];
-
-  for (const ep of episodes) {
-    for (const vid of ep.villages) {
-      const v = pick(vid);
-      for (let o = 0; o < ep.observers; o++) {
-        rows.push({
-          id: uuid(),
-          created_at: new Date(now - ep.startH * 3600e3 + o * 7 * 60e3).toISOString(),
-          observer_id: 'demo-' + String.fromCharCode(65 + o) + vid.slice(0, 3).toUpperCase(),
-          category: ep.cat,
-          severity: 3,
-          lat: v.lat + (Math.random() - 0.5) * 0.004,
-          lon: v.lon + (Math.random() - 0.5) * 0.004,
-          village_id: v.id,
-          village_name: v.name,
-          note: 'Demo data',
-          detail: ep.cat === 'water' ? { pressure: ep.pressure || 'No water at all' } : {},
-          photo: null,
-          status: 'open',
-          sync_state: 'pending',
-          demo: true,
-          app_version: 1,
-        });
-      }
-      /* An open episode gets no restoration report: it is still happening. */
-      if (ep.open) continue;
-
-      /* Close the episode so it lands in the reliability record. */
-      rows.push({
-        id: uuid(),
-        created_at: new Date(now - (ep.startH - ep.lenH) * 3600e3).toISOString(),
-        observer_id: 'demo-AREST',
-        category: ep.cat,
-        severity: 1,
-        lat: v.lat,
-        lon: v.lon,
-        village_id: v.id,
-        village_name: v.name,
-        note: 'Demo data: service restored',
-        detail: {},
-        photo: null,
-        status: 'resolved',
-        sync_state: 'pending',
-        demo: true,
-        app_version: 1,
-      });
-    }
-  }
-
+/**
+ * Load the demo scenario.
+ *
+ * Most of the time Saipan is fine, which is the correct reading of a calm day
+ * and a poor demonstration. This seeds one coherent story across every view so
+ * cause and effect can be followed between tabs. Every row is tagged `demo`,
+ * badged in the UI, announced by a banner, and removable in one tap.
+ */
+async function loadDemoScenario() {
+  const rows = buildDemoReports(S.island);
   for (const r of rows) await putReport(r);
   await metaSet('demo_loaded', true);
+
+  /* A settled day scores near zero everywhere, so the storm the reports
+     describe is also selected in the model. Otherwise the risk map stays
+     blank while the reports say the island is flooding. */
+  S.scenario = 'trop';
 
   S.reports = await allReports();
   recompute();
   render();
-  toast(`${rows.length} labelled demo reports loaded`, 'warn', 4200);
+
+  if (S.map) {
+    S.map.drawRisk(S.derived.risk);
+    S.map.drawReports(S.reports, S.science.report_categories);
+    S.map.drawGrid(S.derived.grid, S.island);
+  }
+
+  toast(`${rows.length} labelled demo reports loaded`, 'warn', 5000);
 }
 
 async function purgeDemo() {
@@ -2108,7 +2089,7 @@ async function openSettings() {
           ${icon('trash', 14)} Remove ${demoCount} demo reports
         </button>` : `
         <button class="btn btn-ghost btn-block" id="set-load-demo" style="margin-bottom:9px">
-          ${icon('users', 14)} Load a labelled demo week
+          ${icon('users', 14)} Load the demo scenario
         </button>`}
 
       <div class="field">
@@ -2150,7 +2131,7 @@ async function openSettings() {
       });
 
       const loadBtn = sheet.querySelector('#set-load-demo');
-      if (loadBtn) loadBtn.addEventListener('click', () => { close(); loadDemoWeek(); });
+      if (loadBtn) loadBtn.addEventListener('click', () => { close(); loadDemoScenario(); });
 
       const purgeBtn = sheet.querySelector('#set-purge-demo');
       if (purgeBtn) purgeBtn.addEventListener('click', () => { close(); purgeDemo(); });

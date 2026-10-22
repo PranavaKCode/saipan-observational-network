@@ -60,7 +60,7 @@ export class SaipanMap {
     this.map.on('zoomend', () => this.applyGibsVisibility());
     this.applyGibsVisibility();
 
-    for (const name of ['risk', 'reports', 'grid', 'reef', 'infra']) {
+    for (const name of ['risk', 'reports', 'grid', 'reef', 'infra', 'sar']) {
       this.groups[name] = L.layerGroup();
     }
     this.groups.risk.addTo(this.map);
@@ -369,6 +369,26 @@ export class SaipanMap {
 
       marker.addTo(this.groups.grid);
     }
+  }
+
+  /* ======================= Radar change ================================= */
+
+  /**
+   * Sentinel-1 surface change for Yutu, as a georeferenced image overlay.
+   * Deliberately not a tile layer: it is one small pre-computed PNG covering
+   * the island, so there is nothing to serve and it works offline like the
+   * rest of the app.
+   */
+  drawSar(sar) {
+    this.clear('sar');
+    if (!sar || !sar.overlay) return;
+
+    const bounds = sar.overlay.bounds;
+    L.imageOverlay(sar.overlay.image, bounds, {
+      opacity: 0.75,
+      interactive: false,
+      alt: 'Sentinel-1 backscatter change over Saipan, 16 to 28 October 2018',
+    }).addTo(this.groups.sar);
   }
 
   /* ======================= Reef sites =================================== */
