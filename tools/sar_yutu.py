@@ -290,37 +290,6 @@ def write_overlay(change_db, shape):
     return path, os.path.getsize(path)
 
 
-def write_land_mask(pre_db, shape):
-    """Export the radar-derived coastline as an alpha mask.
-
-    The app needs to know where Saipan actually is, so an interpolated risk
-    surface can be clipped to land instead of bleeding across the lagoon.
-    Deriving it from the pre-event scene costs nothing - the mask is already
-    computed here - and it follows the real coast, not a hand-drawn box.
-    """
-    from PIL import Image
-    from scipy.ndimage import binary_closing, binary_opening, gaussian_filter
-
-    width, height = shape
-    land = np.isfinite(pre_db) & (pre_db > LAND_DB)
-
-    # Close pinholes (wet ground, dark roofs); drop isolated bright pixels at
-    # sea (boats, wave crests) before softening the edge.
-    land = binary_closing(land, structure=np.ones((5, 5)))
-    land = binary_opening(land, structure=np.ones((3, 3)))
-
-    alpha = gaussian_filter(land.astype('float32'), sigma=1.2)
-    alpha = np.clip((alpha - 0.35) / 0.4, 0, 1)
-
-    rgba = np.zeros((height, width, 4), dtype='uint8')
-    rgba[..., :3] = 255
-    rgba[..., 3] = (alpha * 255).astype('uint8')
-
-    path = os.path.join(DATA, 'saipan-land-mask.png')
-    Image.fromarray(rgba, 'RGBA').save(path, optimize=True)
-    return path, os.path.getsize(path), float(land.mean())
-
-
 def main():
     print('Sentinel-1 surface change over Saipan, Yutu 2018')
     print('OPERA L2 RTC-S1 burst T031-065424-IW2\n')
@@ -382,10 +351,12 @@ def main():
         island = json.load(f)
     stats = village_stats(island, change_db, post_db, pre_db, transform, shape)
 
-    mask_path, mask_size, mask_frac = write_land_mask(pre_db, shape)
-    print('  land mask ' + os.path.basename(mask_path)
-          + '  ' + str(round(mask_size / 1024)) + ' KB'
-          + '  (' + str(round(mask_frac * 100)) + '% of box)')
+    # The island mask is NOT derived here any more. Thresholding backscatter
+    # looked clever - the mask was already computed for the statistics - but
+    # it made a bad coastline: radar shadow on the east-facing slopes bit a
+    # notch out of the southeast, smooth ground punched a hole inland, and
+    # wave crests left specks offshore. tools/coastline_mask.py rasterises the
+    # surveyed OpenStreetMap coastline instead.
 
     png_path, png_size = write_overlay(change_db, shape)
     print(f'\n  overlay {os.path.basename(png_path)}  {png_size / 1024:.0f} KB')
@@ -415,7 +386,7 @@ def main():
         'land_mask': {
             'image': 'data/saipan-land-mask.png',
             'bounds': [[BBOX[1], BBOX[0]], [BBOX[3], BBOX[2]]],
-            'derived_from': 'pre-event Sentinel-1 VV above the land threshold, cleaned',
+            'derived_from': 'OpenStreetMap coastline, rasterised by tools/coastline_mask.py',
         },
         'overlay': {
             'shows': ('fraction of pixels in a ~210 m neighbourhood exceeding the change '

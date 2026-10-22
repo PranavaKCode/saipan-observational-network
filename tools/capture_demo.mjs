@@ -264,6 +264,31 @@ async function main() {
     }
   }
 
+  /* Pull the headline figures straight out of the running app, so anything
+     the film prints beside a screenshot is the number that screenshot shows.
+     Hardcoding these let the film claim an AUC the panel behind it
+     contradicted. */
+  const facts = await cdp.evaluate(`
+    const txt = (sel) => { const e = document.querySelector(sel); return e ? e.textContent.trim() : null; };
+    const num = (s) => { if (!s) return null; const m = s.replace(/,/g,'').match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
+    document.querySelector('.tabbar [data-view="pulse"]').click();
+    await new Promise(r => setTimeout(r, 900));
+    const ici = num(txt('.ici-score'));
+    const state = txt('.ici-state');
+    const dhw = num([...document.querySelectorAll('.metric-value')].map(e=>e.textContent).find(t=>/C-weeks/.test(t)) || '');
+    document.querySelector('.tabbar [data-view="grid"]').click();
+    await new Promise(r => setTimeout(r, 900));
+    const noPower = num(txt('#view-grid .metric-value'));
+    document.querySelector('.tabbar [data-view="model"]').click();
+    await new Promise(r => setTimeout(r, 1200));
+    const metrics = [...document.querySelectorAll('#view-model .metric-value')].map(e=>e.textContent.trim());
+    const auc = num(metrics[0]);
+    return { ici, state, dhw, noPower, auc };
+  `).catch(() => ({}));
+
+  writeFileSync(resolve(OUT, 'facts.json'), JSON.stringify(facts, null, 2));
+  console.log('  facts:', JSON.stringify(facts));
+
   writeFileSync(resolve(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
   console.log(`\n${manifest.length}/${FRAMES.length} frames in ${OUT}`);
 

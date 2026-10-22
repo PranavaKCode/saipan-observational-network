@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SON film</title>
+<style>
+/* ==========================================================================
+   The film composition.
+   --------------------------------------------------------------------------
+   Nothing here runs on a clock. `seek(frame)` positions every element for an
+   exact frame index, so the renderer can take as long as it likes per frame
+   and the motion still comes out at a perfect 30fps. That is also why there
+   are no CSS transitions or keyframe animations anywhere: every value is
+   computed in JS from the frame number.
+   ========================================================================== */
+
+:root {
+  --ink: #eef3f8;
+  --muted: #9fb2c6;
+  --dim: #6c8198;
+  --accent: #4d9bff;
+  --warn: #f0a93a;
+  --crit: #ff5d7a;
+  --ok: #2fcf96;
+  --bg: #080b10;
+  --panel: #0e141c;
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 1920px; height: 1080px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+
+/* Ambient wash. Two slow blobs, positioned per-frame. */
+.wash {
+  position: absolute; border-radius: 50%;
+  filter: blur(130px); opacity: 0.5; pointer-events: none;
+}
+#wash-a { width: 1100px; height: 1100px; background: #12406e; }
+#wash-b { width: 900px; height: 900px; background: #1d2f5e; }
+
+.scene { position: absolute; inset: 0; will-change: opacity, transform; }
+
+/* ---- type ------------------------------------------------------------- */
+.kicker {
+  font-size: 19px; font-weight: 600; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--accent);
+}
+h1 { font-size: 104px; font-weight: 700; letter-spacing: -0.035em; line-height: 0.98; }
+h2 { font-size: 62px; font-weight: 650; letter-spacing: -0.028em; line-height: 1.04; }
+.lede { font-size: 29px; font-weight: 400; color: var(--muted); line-height: 1.45; }
+.fine { font-size: 20px; color: var(--dim); line-height: 1.6; }
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* Each word animates independently, so headings rise in sequence. */
+.w { display: inline-block; will-change: transform, opacity; }
+
+/* ---- screenshot panel -------------------------------------------------- */
+.panel-wrap { position: absolute; inset: 0; display: grid; place-items: center; }
+.panel {
+  position: relative;
+  width: 1920px; height: 1080px;
+  border-radius: 22px; overflow: hidden;
+  background: var(--panel);
+  box-shadow: 0 70px 160px -50px rgba(0,0,0,0.95), 0 0 0 1px rgba(150,180,215,0.10);
+  will-change: transform, opacity;
+}
+.panel img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---- callout ----------------------------------------------------------- */
+.callout {
+  position: absolute;
+  background: rgba(10,15,22,0.80);
+  backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid rgba(150,180,215,0.16);
+  border-radius: 16px;
+  padding: 20px 26px;
+  box-shadow: 0 30px 70px -28px rgba(0,0,0,0.9);
+  will-change: transform, opacity;
+}
+.callout .label {
+  font-size: 15px; font-weight: 600; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--dim); margin-bottom: 6px;
+}
+.callout .value { font-size: 50px; font-weight: 680; letter-spacing: -0.03em; line-height: 1; }
+.callout .sub { font-size: 19px; color: var(--muted); margin-top: 8px; }
+
+/* A ring that draws itself around a point of interest. */
+.ring { position: absolute; will-change: transform, opacity; }
+
+/* ---- stat row ---------------------------------------------------------- */
+.stat { position: absolute; will-change: transform, opacity; }
+.stat .n { font-size: 92px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+.stat .t { font-size: 21px; color: var(--muted); margin-top: 12px; max-width: 360px; line-height: 1.4; }
+
+/* ---- lower third ------------------------------------------------------- */
+#lower {
+  position: absolute; left: 104px; bottom: 96px; will-change: transform, opacity;
+}
+#lower .bar { width: 4px; background: var(--accent); position: absolute; left: -24px; top: 6px; }
+#lower .h { font-size: 44px; font-weight: 650; letter-spacing: -0.025em; }
+#lower .s { font-size: 23px; color: var(--muted); margin-top: 7px; }
+
+/* ---- progress ---------------------------------------------------------- */
+#prog {
+  position: absolute; left: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, #2f7de0, #4d9bff);
+}
+
+#vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(130% 90% at 50% 45%, transparent 55%, rgba(0,0,0,0.55) 100%);
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="wash" id="wash-a"></div>
+  <div class="wash" id="wash-b"></div>
+  <div id="scenes"></div>
+  <div id="vignette"></div>
+  <div id="prog"></div>
+</div>
+
+<script>
+/* ==========================================================================
+   Timing and easing
+   ========================================================================== */
+const FPS = 30;
+const S = (sec) => Math.round(sec * FPS);
+
+/* Apple's springs read as "fast out, settle in" - this is the standard
+   critically damped approximation, plus a gentler one for long camera moves. */
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
+const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/** Spring-ish overshoot for things that "arrive". */
+function spring(t, bounce = 0.18) {
+  if (t >= 1) return 1;
+  if (t <= 0) return 0;
+  const d = 1 - Math.exp(-7 * t);
+  return d + bounce * Math.exp(-6 * t) * Math.sin(10 * t);
+}
+
+/** Normalised progress of [a,b] at frame f, clamped. */
+const seg = (f, a, b) => Math.max(0, Math.min(1, (f - a) / Math.max(1, b - a)));
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const fmt = (n) => Math.round(n).toLocaleString('en-US');
+
+/* ==========================================================================
+   Scene definitions
+   ========================================================================== */
+const CAP = '../../../_cap/';
+
+/** Build word spans so a heading can rise word by word. */
+function words(text) {
+  return text.split(' ').map((w) => `<span class="w">${w}</span>`).join(' ');
+}
+
+const SCENES = [];
+let cursor = 0;
+function scene(seconds, build) {
+  const start = cursor;
+  const len = S(seconds);
+  cursor += len;
+  SCENES.push({ start, len, end: start + len, build });
+}
+
+/* ---- 1. Title ---------------------------------------------------------- */
+scene(4.2, (el) => {
+  el.innerHTML = `
+    <div style="position:absolute;left:104px;top:360px;max-width:1300px">
+      <div class="kicker" data-k>Northern Mariana Islands</div>
+      <h1 style="margin-top:26px" data-h>${words('Saipan Observational Network')}</h1>
+      <div class="lede" style="margin-top:30px;max-width:900px" data-l>
+        Citizen science and utility accountability, built for an island where the
+        network goes down exactly when it is needed.
+      </div>
+    </div>`;
+  return (f, p) => {
+    const k = el.querySelector('[data-k]');
+    const ws = el.querySelectorAll('[data-h] .w');
+    const l = el.querySelector('[data-l]');
+    const kp = seg(f, 4, 26);
+    k.style.opacity = kp;
+    k.style.transform = `translateY(${lerp(16, 0, easeOut(kp))}px)`;
+    ws.forEach((w, i) => {
+      const t = spring(seg(f, 14 + i * 5, 14 + i * 5 + 26));
+      w.style.opacity = Math.min(1, seg(f, 14 + i * 5, 14 + i * 5 + 12));
+      w.style.transform = `translateY(${lerp(74, 0, t)}px)`;
+    });
+    const lp = seg(f, 44, 76);
+    l.style.opacity = lp;
+    l.style.transform = `translateY(${lerp(26, 0, easeOut(lp))}px)`;
+  };
+});
+
+/* ---- 2. The problem, in three numbers ---------------------------------- */
+scene(5.0, (el) => {
+  const stats = [
+    ['85%', 'of staghorn coral lost from the lagoon across two bleaching events'],
+    ['Cat 5', 'Super Typhoon Yutu crossed southern Saipan in October 2018'],
+    ['0', 'public record of which village lost power, or for how long'],
+  ];
+  el.innerHTML = `
+    <div style="position:absolute;left:104px;top:220px">
+      <div class="kicker" data-k>What the island is up against</div>
+    </div>
+    ${stats.map((s, i) => `
+      <div class="stat" data-s style="left:${104 + i * 580}px;top:400px">
+        <div class="n mono" style="color:${['#2fcf96', '#f0a93a', '#ff5d7a'][i]}">${s[0]}</div>
+        <div class="t">${s[1]}</div>
+      </div>`).join('')}`;
+  return (f) => {
+    const k = el.querySelector('[data-k]');
+    const kp = seg(f, 2, 22);
+    k.style.opacity = kp;
+    k.style.transform = `translateY(${lerp(14, 0, easeOut(kp))}px)`;
+    el.querySelectorAll('[data-s]').forEach((s, i) => {
+      const a = 16 + i * 16;
+      const t = spring(seg(f, a, a + 32));
+      s.style.opacity = Math.min(1, seg(f, a, a + 14));
+      s.style.transform = `translateY(${lerp(52, 0, t)}px)`;
+    });
+  };
+});
+
+/* ---- helper: a screen with a camera move and an optional callout -------- */
+function screenScene({ seconds, img, heading, sub, from, to, callout, counter, ring }) {
+  scene(seconds, (el) => {
+    el.innerHTML = `
+      <div class="panel-wrap">
+        <div class="panel" data-p><img src="${CAP}${img}" alt=""></div>
+      </div>
+      ${ring ? `<svg class="ring" data-ring width="340" height="340"
+           style="left:${ring.x - 170}px;top:${ring.y - 170}px">
+          <circle cx="170" cy="170" r="110" fill="none" stroke="#4d9bff"
+                  stroke-width="3" stroke-linecap="round"
+                  stroke-dasharray="691" stroke-dashoffset="691" data-ringc/>
+        </svg>` : ''}
+      ${callout ? `
+        <div class="callout" data-c style="left:${callout.x}px;top:${callout.y}px;min-width:${callout.w || 300}px">
+          <div class="label">${callout.label}</div>
+          <div class="value mono" data-cv style="color:${callout.color || 'var(--ink)'}">${callout.value || ''}</div>
+          ${callout.sub ? `<div class="sub">${callout.sub}</div>` : ''}
+        </div>` : ''}
+      <div id="lower" data-lower>
+        <div class="bar" data-bar></div>
+        <div class="h">${heading}</div>
+        <div class="s">${sub}</div>
+      </div>`;
+
+    const panel = el.querySelector('[data-p]');
+    const low = el.querySelector('[data-lower]');
+    const bar = el.querySelector('[data-bar]');
+    const cal = el.querySelector('[data-c]');
+    const cv = el.querySelector('[data-cv]');
+    const rc = el.querySelector('[data-ringc]');
+    const total = SCENES[SCENES.length - 1] ? 0 : 0;
+
+    return (f, p) => {
+      /* Camera: a slow continuous move across the whole shot. */
+      const t = easeInOut(p);
+      const sc = lerp(from.s, to.s, t);
+      const x = lerp(from.x, to.x, t);
+      const y = lerp(from.y, to.y, t);
+      const intro = spring(seg(f, 0, 30));
+      panel.style.transform =
+        `translate3d(${x}px, ${y + lerp(40, 0, intro)}px, 0) scale(${sc * lerp(0.985, 1, intro)})`;
+      panel.style.opacity = Math.min(1, seg(f, 0, 12));
+
+      const lp = seg(f, 12, 42);
+      low.style.opacity = lp;
+      low.style.transform = `translateY(${lerp(34, 0, easeOutQuint(lp))}px)`;
+      bar.style.height = `${lerp(0, 74, easeOut(seg(f, 16, 44)))}px`;
+
+      if (cal) {
+        const cp = spring(seg(f, 34, 70));
+        cal.style.opacity = Math.min(1, seg(f, 34, 52));
+        cal.style.transform =
+          `translateY(${lerp(28, 0, cp)}px) scale(${lerp(0.94, 1, cp)})`;
+      }
+      if (cv && counter) {
+        const q = easeOutQuint(seg(f, 40, 95));
+        cv.textContent = counter.prefix ? counter.prefix + fmt(counter.to * q)
+          : (counter.decimals
+            ? (counter.to * q).toFixed(counter.decimals)
+            : fmt(counter.to * q)) + (counter.suffix || '');
+      }
+      if (rc) {
+        const r = easeOut(seg(f, 30, 72));
+        rc.style.strokeDashoffset = String(691 * (1 - r));
+        rc.parentElement.style.opacity = Math.min(1, seg(f, 28, 44));
+      }
+    };
+  });
+}
+
+/* ---- 3..n. the product ------------------------------------------------- */
+screenScene({
+  seconds: 4.4, img: '01-pulse.png',
+  heading: 'One number for the whole island',
+  sub: 'Weather, reef heat stress, utilities and alerts, weighted into a single index',
+  from: { s: 1.06, x: 0, y: 30 }, to: { s: 1.13, x: 90, y: 10 },
+  ring: { x: 700, y: 470 },
+  callout: { x: 1180, y: 300, label: 'Island condition index', value: '0', sub: 'Emergency', color: 'var(--crit)' },
+  counter: { to: 24 },
+});
+
+screenScene({
+  seconds: 4.2, img: '02-reef.png',
+  heading: 'Coral heat stress, computed live',
+  sub: 'Degree heating weeks from sea surface temperature, on NOAA Coral Reef Watch thresholds',
+  from: { s: 1.10, x: -120, y: 0 }, to: { s: 1.16, x: -220, y: -30 },
+  callout: { x: 150, y: 220, label: 'Accumulated heat', value: '0', sub: 'Alert Level 1 — bleaching likely', color: 'var(--warn)' },
+  counter: { to: 6.4, decimals: 1, suffix: ' °C-wk' },
+});
+
+screenScene({
+  seconds: 4.6, img: '03-map.png',
+  heading: 'Risk as a field, not as dots',
+  sub: 'Village risk interpolated across the island and clipped to a radar-derived coastline',
+  from: { s: 1.04, x: 0, y: 0 }, to: { s: 1.14, x: -60, y: -40 },
+});
+
+screenScene({
+  seconds: 4.6, img: '04-map-sar.png',
+  heading: 'Radar sees what cloud hides',
+  sub: 'Sentinel-1 surface change, 16 to 28 October 2018, bracketing Super Typhoon Yutu',
+  from: { s: 1.12, x: -80, y: -20 }, to: { s: 1.05, x: 0, y: 10 },
+  callout: { x: 1210, y: 740, label: 'Change detected over', value: '0', sub: 'of Saipan’s land area', color: 'var(--warn)' },
+  counter: { to: 7.7, decimals: 1, suffix: '%' },
+});
+
+screenScene({
+  seconds: 4.2, img: '06-report.png',
+  heading: 'Works with no signal',
+  sub: 'Eleven categories, written to the device before any network attempt is made',
+  from: { s: 1.05, x: 0, y: 0 }, to: { s: 1.12, x: 40, y: -30 },
+});
+
+screenScene({
+  seconds: 4.4, img: '07-report-list.png',
+  heading: 'Corroboration, not volume',
+  sub: 'Two independent observers within 1.5 km and 6 hours before a claim is upgraded',
+  from: { s: 1.10, x: -40, y: 20 }, to: { s: 1.16, x: -90, y: -20 },
+});
+
+screenScene({
+  seconds: 4.6, img: '09-model.png',
+  heading: 'A model trained in the browser',
+  sub: 'Logistic regression over 4,300 days of ERA5 reanalysis, retrained on the device',
+  from: { s: 1.06, x: 0, y: 0 }, to: { s: 1.14, x: -70, y: 30 },
+  callout: { x: 1230, y: 250, label: 'Held-out AUC', value: '0', sub: '861 days, strictly later in time', color: 'var(--ok)' },
+  counter: { to: 0.993, decimals: 3 },
+});
+
+screenScene({
+  seconds: 4.8, img: '10-model-dials.png',
+  heading: 'Dial a storm',
+  sub: 'Move a slider and all 31 villages re-score on every animation frame',
+  from: { s: 1.08, x: 0, y: -10 }, to: { s: 1.15, x: -40, y: -70 },
+  callout: { x: 1200, y: 690, label: 'People exposed', value: '0', sub: 'moderate risk or above', color: 'var(--crit)' },
+  counter: { to: 43439 },
+});
+
+screenScene({
+  seconds: 4.6, img: '12-grid.png',
+  heading: 'The accountability half',
+  sub: 'Resident reports rolled up to utility feeders, with outage history per village',
+  from: { s: 1.06, x: 0, y: 0 }, to: { s: 1.13, x: 60, y: -30 },
+  callout: { x: 1180, y: 250, label: 'Without power', value: '0', sub: 'across two feeders', color: 'var(--warn)' },
+  counter: { to: 17002 },
+});
+
+/* ---- closing ----------------------------------------------------------- */
+scene(4.6, (el) => {
+  el.innerHTML = `
+    <div style="position:absolute;left:104px;top:380px;max-width:1500px">
+      <div class="kicker" data-k>Live now</div>
+      <h2 style="margin-top:24px" data-h>${words('son-five-xi.vercel.app')}</h2>
+      <div class="lede mono" style="margin-top:26px;font-size:25px" data-l>
+        github.com/PranavaKCode/saipan-observational-network
+      </div>
+      <div class="fine" style="margin-top:34px;max-width:980px" data-f>
+        Open data throughout: NOAA and the National Weather Service, NASA GIBS, Open-Meteo,
+        Sentinel-1 via Planetary Computer, SRTM terrain. No build step, no backend.
+      </div>
+    </div>`;
+  return (f) => {
+    const k = el.querySelector('[data-k]');
+    const kp = seg(f, 2, 22);
+    k.style.opacity = kp;
+    k.style.transform = `translateY(${lerp(14, 0, easeOut(kp))}px)`;
+    el.querySelectorAll('[data-h] .w').forEach((w, i) => {
+      const a = 10 + i * 6;
+      const t = spring(seg(f, a, a + 28));
+      w.style.opacity = Math.min(1, seg(f, a, a + 14));
+      w.style.transform = `translateY(${lerp(58, 0, t)}px)`;
+    });
+    for (const [sel, a] of [['[data-l]', 34], ['[data-f]', 48]]) {
+      const n = el.querySelector(sel);
+      const p = seg(f, a, a + 34);
+      n.style.opacity = p;
+      n.style.transform = `translateY(${lerp(22, 0, easeOut(p))}px)`;
+    }
+  };
+});
+
+/* ==========================================================================
+   Assemble
+   ========================================================================== */
+const TOTAL = cursor;
+const host = document.getElementById('scenes');
+const washA = document.getElementById('wash-a');
+const washB = document.getElementById('wash-b');
+const prog = document.getElementById('prog');
+
+const XFADE = S(0.45);
+
+for (const sc of SCENES) {
+  const el = document.createElement('div');
+  el.className = 'scene';
+  host.appendChild(el);
+  sc.el = el;
+  sc.update = sc.build(el);
+}
+
+window.TOTAL_FRAMES = TOTAL;
+
+window.seek = function (f) {
+  for (const sc of SCENES) {
+    const local = f - sc.start;
+    /* A scene stays mounted through the outgoing crossfade. */
+    const visible = local >= -XFADE && local <= sc.len + XFADE;
+    if (!visible) { sc.el.style.display = 'none'; continue; }
+    sc.el.style.display = 'block';
+
+    let a = 1;
+    if (local < 0) a = 0;
+    else if (local < XFADE) a = local / XFADE;
+    else if (local > sc.len - XFADE) a = Math.max(0, (sc.len - local) / XFADE);
+
+    sc.el.style.opacity = a;
+    sc.update(Math.max(0, local), Math.max(0, Math.min(1, local / sc.len)));
+  }
+
+  /* Slow ambient drift, independent of scenes. */
+  const g = f / TOTAL;
+  washA.style.transform = `translate(${lerp(-180, 620, g)}px, ${lerp(-120, 420, Math.sin(g * 3.1) * 0.5 + 0.5)}px)`;
+  washB.style.transform = `translate(${lerp(1500, 500, g)}px, ${lerp(620, 60, g)}px)`;
+
+  prog.style.width = `${(f / TOTAL) * 1920}px`;
+};
+
+window.seek(0);
+window.__filmReady = true;
+</script>
+</body>
+</html>
