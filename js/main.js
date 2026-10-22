@@ -16,8 +16,9 @@ import {
 
 import { aggregate, reliability, restoreExpectation, STATUS } from './grid.js';
 import { loadCartoKey } from './config.js';
+import { exportCsv, exportJson, openSitrep } from './export.js';
 import { SaipanMap, nearestVillage } from './map.js';
-import { allReports, putReport, uuid, observerId, pendingReports, storageEstimate, clearAllLocal, metaSet } from './store.js';
+import { allReports, putReport, uuid, observerId, pendingReports, storageEstimate, clearAllLocal, metaSet, metaGet } from './store.js';
 import { openComposer, resolveReport, renderReportList, flushQueue, syncEndpoint, setSyncEndpoint } from './reports.js';
 import {
   icon, fmt, fmtInt, pct, ago, dur, localTime, escapeHtml, toast, openSheet,
@@ -38,8 +39,10 @@ const S = {
   modelError: null,
   head: 'nowcast',
   scenario: 'now',
+  custom: null,       // hand-dialled scenario features
   reports: [],
   view: 'pulse',
+  crisis: false,
   map: null,
   mapLayerKey: 'truecolor',
   mapOverlay: 'risk',
@@ -69,6 +72,8 @@ async function boot() {
   /* Pick up the deployment's CARTO key if this checkout has one. Absent on a
      fresh clone, which is fine - the basemap falls back to unkeyed tiles. */
   await loadCartoKey();
+  S.crisis = (await metaGet('crisis_mode', false)) === true;
+  document.body.classList.toggle('crisis', S.crisis);
 
   S.reports = await allReports();
   render();                      // paint the shell immediately
@@ -101,8 +106,51 @@ function handleDeepLink() {
   }
 }
 
+function emptyFeed() {
+  return { data: null, stale: true, at: null, error: 'skipped in crisis mode' };
+}
+
+/**
+ * Crisis mode. Written for the case this whole app exists for: the network is
+ * throttled or barely up, the battery is finite, and the only things that
+ * matter are the current conditions, the official alert, and being able to
+ * file a report.
+ *
+ * It does not pretend to report megabytes saved - that number would be made
+ * up. It states what it switches off.
+ */
+async function setCrisis(on, { persist = true } = {}) {
+  S.crisis = !!on;
+  if (persist) await metaSet('crisis_mode', S.crisis);
+
+  document.body.classList.toggle('crisis', S.crisis);
+
+  if (S.map) {
+    S.map.toggleGibs(!S.crisis);
+    S.map.setBase(S.crisis ? 'carto' : 'esri');
+  }
+
+  restartRefresh();
+  await refreshFeeds();
+  render();
+
+  toast(S.crisis
+    ? 'Crisis mode on: satellite imagery off, feeds trimmed, updates hourly'
+    : 'Crisis mode off: full imagery and feeds restored', 'ok', 4200);
+}
+
+let refreshTimer = null;
+
 function scheduleRefresh() {
-  setInterval(() => { if (navigator.onLine) refreshFeeds(); }, 10 * 60e3);
+  restartRefresh();
+}
+
+function restartRefresh() {
+  clearInterval(refreshTimer);
+  /* Ten minutes normally; hourly in crisis mode, where every avoidable
+     request costs battery and bandwidth someone may need later. */
+  const every = S.crisis ? 60 * 60e3 : 10 * 60e3;
+  refreshTimer = setInterval(() => { if (navigator.onLine) refreshFeeds(); }, every);
 }
 
 /* ==========================================================================
@@ -112,12 +160,24 @@ function scheduleRefresh() {
 async function refreshFeeds() {
   setNet(navigator.onLine ? 'syncing' : 'offline');
 
+  const lean = S.crisis;
+
+  /* In crisis mode only the two feeds that drive a decision are fetched:
+     conditions and the official alert. The forecast narrative, seismicity
+     and the 92-day marine history are comfort, not information someone
+     needs while deciding whether to move. */
   const [weather, marine, forecast, alerts, qk] = await Promise.all([
-    weatherNow(), marineNow(), nwsForecast(), nwsAlerts(), quakes(),
+    weatherNow(lean),
+    marineNow(lean),
+    lean ? Promise.resolve(S.feeds.forecast || emptyFeed()) : nwsForecast(),
+    nwsAlerts(),
+    lean ? Promise.resolve(S.feeds.quakes || emptyFeed()) : quakes(),
   ]);
 
   S.feeds = { weather, marine, forecast, alerts, quakes: qk };
 
+  /* Lean marine payloads carry no daily series, so degree heating weeks are
+     left at their last computed value rather than recomputed from nothing. */
   if (marine.data && marine.data.daily) {
     S.derived.dhw = degreeHeatingWeeks(
       marine.data.daily.time,
@@ -210,11 +270,18 @@ function recompute() {
 
   if (S.model && S.derived.features) {
     const scenario = SCENARIOS.find((x) => x.id === S.scenario);
-    const features = scenario && scenario.f ? scenario.f : S.derived.features;
+    const features = S.scenario === 'custom' && S.custom
+      ? S.custom
+      : (scenario && scenario.f ? scenario.f : S.derived.features);
 
-    const wave = scenario && scenario.f
-      ? (S.scenario === 'yutu' ? 9 : S.scenario === 'trop' ? 5 : S.scenario === 'soudelor' ? 6 : 2)
-      : currentWave();
+    /* Swell is not a model feature; it feeds the surge term. Scenarios carry a
+       representative sea state, and a hand-dialled one scales it with wind
+       rather than leaving it at today's calm. */
+    const wave = S.scenario === 'custom' && S.custom
+      ? Math.min(10, 1 + (S.custom.windMax || 0) / 20)
+      : scenario && scenario.f
+        ? (S.scenario === 'yutu' ? 9 : S.scenario === 'trop' ? 5 : S.scenario === 'soudelor' ? 6 : 2)
+        : currentWave();
 
     S.derived.risk = villageRisk(S.model, features, S.island.villages, {
       waveHeight: wave,
@@ -365,6 +432,18 @@ function renderPulse() {
       <p class="lede">Saipan, ${localTime(new Date().toISOString())} ChST &middot; live feeds with offline fallback</p>
     </div>
 
+    ${S.crisis ? `
+      <div class="card crisis-banner">
+        <div class="card-head">
+          <span style="color:var(--watch)">${icon('shield', 18)}</span>
+          <h2>Crisis mode</h2>
+          <button class="btn btn-sm btn-ghost" id="crisis-off">Turn off</button>
+        </div>
+        <p style="margin:0">Satellite imagery is off, feeds are trimmed to conditions and official
+        alerts, and updates run hourly instead of every ten minutes. Reporting works exactly as
+        normal. Reef heat stress needs 12 weeks of history, so it is paused.</p>
+      </div>` : ''}
+
     ${alerts.length ? alertBanner(alerts) : ''}
 
     <div class="dash-split">
@@ -475,6 +554,9 @@ function renderPulse() {
       NASA EOSDIS GIBS imagery. Coral alert levels follow NOAA Coral Reef Watch thresholds
       against a ${CORAL_MMM}&deg;C monthly maximum.
     </div>`;
+
+  const crisisOff = host.querySelector('#crisis-off');
+  if (crisisOff) crisisOff.addEventListener('click', () => setCrisis(false));
 
   wireViewButtons(host);
 }
@@ -1202,23 +1284,31 @@ function renderModelView() {
             <button class="chip ${S.scenario === sc.id ? 'active' : ''}" data-scenario="${sc.id}">
               ${escapeHtml(sc.label)}
             </button>`).join('')}
+          <button class="chip ${S.scenario === 'custom' ? 'active' : ''}" data-scenario="custom">
+            Dial your own
+          </button>
         </div>
         <p style="margin:9px 0 0;font-size:.82rem">
-          ${escapeHtml(SCENARIOS.find((x) => x.id === S.scenario).desc)}
+          ${escapeHtml(S.scenario === 'custom'
+            ? 'Move a slider and the model re-scores all 31 villages as you drag.'
+            : SCENARIOS.find((x) => x.id === S.scenario).desc)}
         </p>
+
+        ${S.scenario === 'custom' ? renderScenarioSliders() : ''}
 
         ${risk ? `
           <div class="grid grid-3" style="margin-top:11px">
             ${metricTile({
-              label: 'Island hazard', value: riskScore(risk.hazard), unit: '%',
-              tone: band(risk.hazard).key,
+              label: 'Island hazard', value: `<span id="sc-hazard">${riskScore(risk.hazard)}</span>`,
+              unit: '%', tone: band(risk.hazard).key,
             })}
             ${metricTile({
-              label: 'People exposed', value: fmtInt(risk.populationExposed),
+              label: 'People exposed', value: `<span id="sc-exposed">${fmtInt(risk.populationExposed)}</span>`,
               sub: 'moderate risk or above', tone: risk.populationExposed > 8000 ? 'alert' : 'watch',
             })}
             ${metricTile({
-              label: 'Villages', value: risk.villagesAtRisk, unit: `/ ${S.island.villages.length}`,
+              label: 'Villages', value: `<span id="sc-villages">${risk.villagesAtRisk}</span>`,
+              unit: `/ ${S.island.villages.length}`,
               sub: 'at risk', tone: risk.villagesAtRisk > 8 ? 'alert' : 'ok',
             })}
           </div>
@@ -1231,20 +1321,8 @@ function renderModelView() {
                 <th>Village</th><th>Risk (relative)</th><th class="num">Score</th>
                 <th class="num">Pop</th><th class="num">Elev</th><th>Driver</th>
               </tr></thead>
-              <tbody>
-                ${risk.villages.map((v) => `
-                  <tr data-village="${v.id}">
-                    <td>${escapeHtml(v.name)}</td>
-                    <td><div class="bar-cell">
-                      <span class="track"><i class="fill" style="width:${((v.relative || 0) * 100).toFixed(0)}%;background:${v.band.color}"></i></span>
-                    </div></td>
-                    <td class="num" style="color:${v.band.color}">${riskScore(v.risk)}</td>
-                    <td class="num">${fmtInt(v.pop)}</td>
-                    <td class="num">${v.elev_m}</td>
-                    <td>${v.drivenBy === 'observations'
-                      ? `<span class="badge badge-info">${v.confirmations} report${v.confirmations > 1 ? 's' : ''}</span>`
-                      : '<span style="color:var(--text-3);font-size:.72rem">model</span>'}</td>
-                  </tr>`).join('')}
+              <tbody id="risk-rows">
+                ${riskRows(risk)}
               </tbody>
             </table>
           </div>
@@ -1268,11 +1346,14 @@ function renderModelView() {
   host.querySelectorAll('#scenario-pills [data-scenario]').forEach((b) => {
     b.addEventListener('click', () => {
       S.scenario = b.dataset.scenario;
+      if (S.scenario === 'custom') seedCustom();
       recompute();
       renderModelView();
       renderMapView();
     });
   });
+
+  wireScenarioSliders(host);
 
   host.querySelectorAll('#head-switch [data-head]').forEach((b) => {
     b.addEventListener('click', async () => {
@@ -1302,6 +1383,112 @@ function riskScore(p) {
   if (v >= 10) return String(Math.round(v));
   if (v >= 0.1) return v.toFixed(1);
   return v > 0 ? '<0.1' : '0';
+}
+
+/* The four inputs a person actually reasons about. Antecedent rain and wet
+   hours follow from them rather than demanding their own sliders: nobody
+   thinks in "wet hours", and an interface with eight sliders is a form. */
+const DIALS = [
+  { key: 'rain1',    label: 'Rain today',        min: 0, max: 250, step: 5, unit: 'mm' },
+  { key: 'rain3',    label: 'Rain prior 3 days', min: 0, max: 200, step: 5, unit: 'mm' },
+  { key: 'windMax',  label: 'Max wind',          min: 0, max: 200, step: 5, unit: 'km/h' },
+  { key: 'presAnom', label: 'Pressure deficit',  min: 0, max: 60,  step: 1, unit: 'hPa' },
+];
+
+/** Seed the dials from whatever is on screen, so dragging starts from there. */
+function seedCustom() {
+  const base = S.derived.activeFeatures || S.derived.features || {};
+  S.custom = {
+    rain1: Math.round(base.rain1 || 0),
+    rain3: Math.round(base.rain3 || 0),
+    rain7: Math.round(base.rain7 || 0),
+    wetHours: base.wetHours || 0,
+    windMax: Math.round(base.windMax || 0),
+    presAnom: Math.round(base.presAnom || 0),
+    presTrend: base.presTrend || 0,
+    wetSeason: base.wetSeason ?? 1,
+  };
+}
+
+function renderScenarioSliders() {
+  if (!S.custom) seedCustom();
+  return `<div class="dials" id="dials">
+    ${DIALS.map((d) => `
+      <div class="dial">
+        <label for="dial-${d.key}">
+          ${escapeHtml(d.label)}
+          <output id="out-${d.key}">${Math.round(S.custom[d.key])} ${escapeHtml(d.unit)}</output>
+        </label>
+        <input type="range" id="dial-${d.key}" data-dial="${d.key}"
+               min="${d.min}" max="${d.max}" step="${d.step}" value="${S.custom[d.key]}">
+      </div>`).join('')}
+    <div class="field-hint" style="grid-column:1/-1">
+      Rain over 7 days and wet hours are carried from the live reading rather than dialled, so a
+      scenario stays physically coherent. Swell scales with wind to drive the surge term.
+    </div>
+  </div>`;
+}
+
+function wireScenarioSliders(host) {
+  const dials = host.querySelector('#dials');
+  if (!dials) return;
+
+  let frame = null;
+  dials.querySelectorAll('[data-dial]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const key = input.dataset.dial;
+      const meta = DIALS.find((d) => d.key === key);
+      S.custom[key] = Number(input.value);
+
+      /* Keep the derived features consistent with what was dialled: a week's
+         rain cannot be less than the three days inside it. */
+      S.custom.rain7 = Math.max(S.custom.rain7, S.custom.rain3);
+      S.custom.wetHours = Math.min(24, Math.round(S.custom.rain1 / 8));
+
+      const out = host.querySelector(`#out-${key}`);
+      if (out) out.textContent = `${Math.round(S.custom[key])} ${meta.unit}`;
+
+      /* Recompute on a frame so a drag stays at pointer rate instead of
+         queueing one full re-score per input event. */
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        recompute();
+        paintScenarioOutputs(host);
+        if (S.map) S.map.drawRisk(S.derived.risk);
+      });
+    });
+  });
+}
+
+/* Repaint only the numbers and rows the dials affect. Re-rendering the whole
+   view mid-drag would tear the slider out from under the pointer. */
+function paintScenarioOutputs(host) {
+  const risk = S.derived.risk;
+  if (!risk) return;
+
+  const set = (sel, text) => { const el = host.querySelector(sel); if (el) el.textContent = text; };
+  set('#sc-hazard', riskScore(risk.hazard));
+  set('#sc-exposed', fmtInt(risk.populationExposed));
+  set('#sc-villages', String(risk.villagesAtRisk));
+
+  const body = host.querySelector('#risk-rows');
+  if (body) body.innerHTML = riskRows(risk);
+}
+
+function riskRows(risk) {
+  return risk.villages.map((v) => `
+                  <tr data-village="${v.id}">
+                    <td>${escapeHtml(v.name)}</td>
+                    <td><div class="bar-cell">
+                      <span class="track"><i class="fill" style="width:${((v.relative || 0) * 100).toFixed(0)}%;background:${v.band.color}"></i></span>
+                    </div></td>
+                    <td class="num" style="color:${v.band.color}">${riskScore(v.risk)}</td>
+                    <td class="num">${fmtInt(v.pop)}</td>
+                    <td class="num">${v.elev_m}</td>
+                    <td>${v.drivenBy === 'observations'
+                      ? `<span class="badge badge-info">${v.confirmations} report${v.confirmations > 1 ? 's' : ''}</span>`
+                      : '<span style="color:var(--text-3);font-size:.72rem">model</span>'}</td>
+                  </tr>`).join('');
 }
 
 function renderWhy() {
@@ -1924,9 +2111,34 @@ async function openSettings() {
           ${icon('users', 14)} Load a labelled demo week
         </button>`}
 
-      <button class="btn btn-ghost btn-block" id="set-export" style="margin-bottom:9px">
-        ${icon('download', 14)} Export my reports as JSON
-      </button>
+      <div class="field">
+        <label>Crisis mode</label>
+        <button class="btn ${S.crisis ? 'btn-primary' : 'btn-ghost'} btn-block" id="set-crisis">
+          ${icon('shield', 14)} ${S.crisis ? 'Crisis mode is on' : 'Turn on crisis mode'}
+        </button>
+        <div class="field-hint">
+          For a throttled network or a battery you need to last. Turns off satellite imagery,
+          trims the feeds to current conditions and official alerts, and slows updates to hourly.
+          Filing and storing reports is untouched.
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Export</label>
+        <button class="btn btn-ghost btn-block" id="set-sitrep" style="margin-bottom:7px">
+          ${icon('flag', 14)} Situation report (printable)
+        </button>
+        <button class="btn btn-ghost btn-block" id="set-csv" style="margin-bottom:7px">
+          ${icon('download', 14)} Reports as CSV
+        </button>
+        <button class="btn btn-ghost btn-block" id="set-export">
+          ${icon('download', 14)} Reports as JSON
+        </button>
+        <div class="field-hint">
+          Community-generated, for sharing with responders or an agency. It is not an official
+          product of CUC, BECQ, FEMA or any emergency service, and says so on the page.
+        </div>
+      </div>
       <button class="btn btn-danger btn-block" id="set-wipe">
         ${icon('trash', 14)} Erase everything on this device
       </button>`,
@@ -1943,7 +2155,10 @@ async function openSettings() {
       const purgeBtn = sheet.querySelector('#set-purge-demo');
       if (purgeBtn) purgeBtn.addEventListener('click', () => { close(); purgeDemo(); });
 
-      sheet.querySelector('#set-export').addEventListener('click', () => exportReports());
+      sheet.querySelector('#set-export').addEventListener('click', () => exportJson(exportContext()));
+      sheet.querySelector('#set-csv').addEventListener('click', () => exportCsv(exportContext()));
+      sheet.querySelector('#set-sitrep').addEventListener('click', () => openSitrep(exportContext()));
+      sheet.querySelector('#set-crisis').addEventListener('click', () => { close(); setCrisis(!S.crisis); });
 
       sheet.querySelector('#set-wipe').addEventListener('click', async () => {
         if (!confirm('Erase all reports, cached feeds and the trained model from this device?')) return;
@@ -1960,22 +2175,21 @@ async function openSettings() {
   });
 }
 
-function exportReports() {
-  const payload = {
-    exported_at: new Date().toISOString(),
-    app: 'Saipan Observational Network',
-    island: 'Saipan, CNMI',
-    count: S.reports.length,
-    reports: S.reports.map((r) => ({ ...r, photo: r.photo ? '[photo omitted from export]' : null })),
-  };
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `son-reports-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast('Export started', 'ok');
+
+/** Everything the exporters need, assembled in one place. */
+function exportContext() {
+  const sc = SCENARIOS.find((x) => x.id === S.scenario);
+  return {
+    reports: S.reports,
+    derived: S.derived,
+    feeds: S.feeds,
+    science: S.science,
+    island: S.island,
+    wave: currentWave(),
+    sst: currentSST(),
+    scenarioLabel: S.scenario === 'custom' ? 'hand-dialled' : (sc ? sc.label : 'live'),
+  };
 }
 
 /* ==========================================================================

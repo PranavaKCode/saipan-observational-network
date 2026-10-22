@@ -490,6 +490,74 @@ export async function flushQueue() {
 }
 
 /* ==========================================================================
+   Verification
+   --------------------------------------------------------------------------
+   A report is one person's account. Two people who do not know each other
+   describing the same thing in the same place within a few hours is a much
+   stronger claim, and the interface should say which of those it is holding.
+
+   The tiers below are earned from evidence the app actually has: independent
+   observers, proximity, recency. There is deliberately no tier for satellite
+   or sensor cross-validation, because this build has neither - adding a badge
+   that implies a confirmation nobody performed would be worse than showing
+   no badge at all.
+   ========================================================================== */
+
+const CORROBORATE_KM = 1.5;
+const CORROBORATE_H = 6;
+
+export const VERIFICATION = {
+  resolved:     { key: 'resolved',     label: 'Resolved',     tone: 'ok' },
+  corroborated: { key: 'corroborated', label: 'Corroborated', tone: 'info' },
+  single:       { key: 'single',       label: 'Single report', tone: 'watch' },
+};
+
+function separationKm(a, b) {
+  if (a.lat == null || b.lat == null) return Infinity;
+  const dLat = (a.lat - b.lat) * 111.32;
+  const dLon = (a.lon - b.lon) * 111.32 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot(dLat, dLon);
+}
+
+/**
+ * Classify one report against the rest.
+ * @returns {{key:string,label:string,tone:string,observers:number,note:string}}
+ */
+export function verification(report, all) {
+  if (report.status === 'resolved') {
+    return { ...VERIFICATION.resolved, observers: 1, note: 'Marked resolved by an observer' };
+  }
+
+  const t = new Date(report.created_at).getTime();
+  const others = new Set();
+
+  for (const other of all) {
+    if (other.id === report.id) continue;
+    if (other.category !== report.category) continue;
+    if (other.observer_id === report.observer_id) continue;
+    if (other.status === 'resolved') continue;
+    if (Math.abs(new Date(other.created_at).getTime() - t) > CORROBORATE_H * 3600e3) continue;
+    if (separationKm(report, other) > CORROBORATE_KM) continue;
+    others.add(other.observer_id);
+  }
+
+  if (others.size >= 1) {
+    const n = others.size + 1;
+    return {
+      ...VERIFICATION.corroborated,
+      observers: n,
+      note: `${n} independent observers within ${CORROBORATE_KM} km and ${CORROBORATE_H} h`,
+    };
+  }
+
+  return {
+    ...VERIFICATION.single,
+    observers: 1,
+    note: 'One account, not yet corroborated by another observer',
+  };
+}
+
+/* ==========================================================================
    Report list rendering
    ========================================================================== */
 
@@ -502,14 +570,17 @@ export function renderReportList(reports, categories, { limit = 50, onPick } = {
   const rows = reports.slice(0, limit).map((r) => {
     const cat = catById.get(r.category) || { label: r.category, color: 'var(--ok)', icon: 'info' };
     const sev = ['', 'Minor', 'Moderate', 'Serious', 'Severe'][r.severity] || '';
+    const v = verification(r, reports);
 
     return `<button class="list-item" data-report="${r.id}">
       <span class="list-icon" style="color:${cat.color}">${icon(cat.icon || 'info', 17)}</span>
       <span class="list-item-main">
         <span class="list-item-title">
           ${escapeHtml(cat.label)}
-          ${r.status === 'resolved' ? '<span class="badge badge-ok">resolved</span>' : ''}
-          ${r.sync_state === 'pending' ? '<span class="badge badge-watch">on device</span>' : ''}
+          <span class="badge badge-${v.tone}" title="${escapeHtml(v.note)}">${escapeHtml(v.label)}${
+            v.observers > 1 ? ' &middot; ' + v.observers : ''
+          }</span>
+          ${r.sync_state === 'pending' ? '<span class="badge badge-mute">on device</span>' : ''}
         </span>
         <span class="list-item-sub">
           ${escapeHtml(r.village_name || 'Unlocated')}${sev ? ' &middot; ' + sev : ''}

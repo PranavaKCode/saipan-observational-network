@@ -66,7 +66,34 @@ browser on ~4,300 days of ERA5 reanalysis, downscaled to villages by an explicit
 hazard × vulnerability formula, with scenario projection up to a Yutu-scale
 category 5.
 
-### 5. Grid and water status
+### 5. Crisis mode
+A switch for the situation the app exists for: the network is throttled, the
+battery is finite, and only three things matter. It turns off satellite
+imagery, trims the feeds to current conditions and official alerts, and slows
+updates from ten minutes to hourly. Measured effect on the weather request:
+the hourly block is dropped and the windows shrink from 7 days forward to 1;
+the marine request loses its 92-day history entirely. Filing and storing
+reports is untouched. It does not claim a megabytes-saved figure, because that
+number would be invented.
+
+Reef heat stress needs 12 weeks of sea surface temperature, so in crisis mode
+it reports itself paused rather than computing a figure from a truncated
+window.
+
+### 6. Verification tiers
+Every report carries what the network could actually establish about it:
+**Single report**, **Corroborated** (two or more independent observers, same
+category, within 1.5 km and 6 hours), or **Resolved**. There is deliberately no
+"cross-validated by satellite or sensor" tier, because this build has neither —
+a badge implying a confirmation nobody performed is worse than no badge.
+
+### 7. Export
+A **situation report** that prints to one page, and **CSV** or **JSON** of the
+reports. All three lead with the same disclaimer: community-generated, not a
+product of CUC, BECQ, DCRM, NWS, FEMA or any emergency service. A document that
+looks official and is not is dangerous during an emergency.
+
+### 8. Grid and water status
 Crowd reports aggregated into village and feeder status, with **corroboration
 required**: two independent observers before a village is called out, one report
 reads as "single report". When half the villages on a feeder report loss at once
@@ -306,10 +333,16 @@ cached conditions, and keeps all stored reports and the trained model.
 ```bash
 git clone https://github.com/PranavaKCode/saipan-observational-network.git
 cd saipan-observational-network
-python -m http.server 8777
+python tools/devserver.py
 ```
 
-Then open `http://localhost:8777`.
+Then open `http://localhost:8777`. Use `tools/devserver.py` rather than
+`python -m http.server`: the latter sends no cache headers, so browsers apply
+heuristic caching, and with ES modules on unversioned filenames that produces a
+genuinely confusing failure — you edit a module, reload, and the browser keeps
+the old copy, reporting an import error for an export that is plainly in the
+file. The dev server disables caching and pins the MIME types. Production
+caching is a separate policy and lives in `vercel.json`.
 
 There is nothing to install. The one optional step is a map key: copy
 `js/carto-key.example.js` to `js/carto-key.js` and paste in a free
@@ -378,6 +411,7 @@ sw.js                 service worker: shell, tile and feed caching
 css/son.css           design system
 js/
   main.js             boot, state, the five views
+  export.js           CSV, JSON and the printable situation report
   feeds.js            open data feeds, DHW and bleaching alerts
   model.js            dataset build, training, evaluation, downscaling
   grid.js             outage aggregation, corroboration, reliability record

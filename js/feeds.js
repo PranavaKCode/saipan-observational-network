@@ -93,33 +93,50 @@ export async function load(key, url, opts = {}) {
 
 /* ========================== Weather ====================================== */
 
-export function weatherNow() {
+/**
+ * @param {boolean} lean  drop the hourly block and shorten the windows.
+ *   The model only needs eight days of daily rainfall; on a throttled
+ *   connection the hourly series is most of the payload and none of the value.
+ */
+export function weatherNow(lean = false) {
   const u = new URL('https://api.open-meteo.com/v1/forecast');
-  u.search = new URLSearchParams({
+  const params = {
     latitude: SAIPAN.lat,
     longitude: SAIPAN.lon,
     current: 'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
-    hourly: 'precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m',
     daily: 'precipitation_sum,precipitation_hours,wind_speed_10m_max,wind_gusts_10m_max,temperature_2m_max,temperature_2m_min',
-    past_days: 7,
-    forecast_days: 7,
+    past_days: lean ? 8 : 7,
+    forecast_days: lean ? 1 : 7,
     timezone: SAIPAN.tz,
-  }).toString();
-  return load('feed:weather', u.toString());
+  };
+  if (!lean) {
+    params.hourly = 'precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m';
+  }
+  u.search = new URLSearchParams(params).toString();
+  /* Separate cache key: a lean payload must not masquerade as the full one. */
+  return load(lean ? 'feed:weather:lean' : 'feed:weather', u.toString());
 }
 
-export function marineNow() {
+/**
+ * @param {boolean} lean  current conditions only. Degree heating weeks need
+ *   84 days of history, so the reef panel reports itself unavailable in lean
+ *   mode rather than computing a figure from a truncated window.
+ */
+export function marineNow(lean = false) {
   const u = new URL('https://marine-api.open-meteo.com/v1/marine');
-  u.search = new URLSearchParams({
+  const params = {
     latitude: SAIPAN.lat,
     longitude: SAIPAN.lon,
     current: 'wave_height,wave_direction,wave_period,sea_surface_temperature',
-    daily: 'wave_height_max,wave_period_max,sea_surface_temperature_mean,sea_surface_temperature_max',
-    past_days: 92,
-    forecast_days: 7,
     timezone: SAIPAN.tz,
-  }).toString();
-  return load('feed:marine', u.toString());
+  };
+  if (!lean) {
+    params.daily = 'wave_height_max,wave_period_max,sea_surface_temperature_mean,sea_surface_temperature_max';
+    params.past_days = 92;
+    params.forecast_days = 7;
+  }
+  u.search = new URLSearchParams(params).toString();
+  return load(lean ? 'feed:marine:lean' : 'feed:marine', u.toString());
 }
 
 export function nwsForecast() {

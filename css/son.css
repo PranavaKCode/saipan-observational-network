@@ -1058,6 +1058,43 @@ button.list-item:active { transform: scale(0.995); }
 .scenario-pills { display: flex; gap: var(--s2); flex-wrap: wrap; }
 
 /* ==========================================================================
+   Scenario dials
+   ========================================================================== */
+
+.dials {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+.dial label {
+  display: flex; align-items: baseline; gap: var(--s2);
+  font-size: 0.8125rem; font-weight: 550; color: var(--text);
+  margin-bottom: 1px;
+}
+.dial output {
+  margin-left: auto;
+  font-size: 0.8125rem; font-weight: 600; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Crisis mode
+   --------------------------------------------------------------------------
+   Marked with a standing amber edge rather than a dismissible notice: the
+   reader must be able to tell at a glance that they are looking at a reduced
+   picture, not the full one.
+   ========================================================================== */
+
+.crisis-banner { border-color: var(--watch); background: var(--watch-bg); }
+.crisis-banner p { color: var(--text-2); font-size: 0.8125rem; }
+
+body.crisis .topbar { box-shadow: 0 1px 0 var(--watch), 0 10px 18px -16px rgba(0, 0, 0, 0.45); }
+body.crisis .net-pill { background: var(--watch-bg); border-color: transparent; color: var(--watch); }
+
+/* ==========================================================================
    Reef
    ========================================================================== */
 

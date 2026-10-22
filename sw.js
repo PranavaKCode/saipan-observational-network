@@ -16,7 +16,7 @@
                     never silently passes old numbers off as current.
    ========================================================================== */
 
-const VERSION = 'son-v12';
+const VERSION = 'son-v13';
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = VERSION + '-tiles';
 const FEED_CACHE = VERSION + '-feeds';
@@ -26,7 +26,7 @@ const MAX_TILES = 1200;
 const SHELL = [
   './',
   'index.html',
-  'css/son.css?v=7',
+  'css/son.css?v=8',
   'js/main.js',
   'js/store.js',
   'js/feeds.js',
@@ -36,6 +36,7 @@ const SHELL = [
   'js/grid.js',
   'js/reports.js',
   'js/config.js',
+  'js/export.js',
   'js/carto-key.js',
   'data/island.json',
   'data/science.json',
