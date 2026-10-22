@@ -429,6 +429,29 @@ hand-written — the charts are inline SVG so nothing extra has to be cached.
 
 ---
 
+## Capturing the app on video
+
+`tools/capture_demo.mjs` drives headless Chrome over the DevTools Protocol and
+writes full-resolution stills of each view, waiting on a condition that proves
+the view is populated before each shutter. `tools/build_demo_video.py` cuts
+those into a narrated-caption walkthrough.
+
+Two routes to genuinely smooth screen *recording* were tried and do not work
+in a headless environment, recorded here so nobody repeats them:
+
+- **`Page.startScreencast`** tops out near 5 fps on this page. Chrome only
+  emits a frame on compositor swap, and a mostly-static UI gives it little
+  reason to swap. Forcing a per-frame repaint and unthrottling vsync made it
+  slightly worse, not better.
+- **Virtual-time stepping** (pause the clock, advance 1/30 s, screenshot,
+  repeat) is the technique deterministic renderers use, but with virtual time
+  paused the renderer produces no new frame and `Page.captureScreenshot`
+  deadlocks.
+
+A genuinely smooth film therefore wants either a GPU-backed non-headless
+capture, or an HTML motion-graphics composition rendered frame by frame with
+the captured stills composited into it.
+
 ## What I would build next
 
 1. **Replace the proxy labels.** A season of real flood reports makes the
