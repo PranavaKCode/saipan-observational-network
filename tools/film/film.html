@@ -66,10 +66,12 @@ h2 { font-size: 62px; font-weight: 650; letter-spacing: -0.028em; line-height: 1
 .panel-wrap { position: absolute; inset: 0; display: grid; place-items: center; }
 .panel {
   position: relative;
-  /* Inset, so the push below travels into margin instead of slicing the
-     top bar and the sidebar off the interface being shown. */
-  width: 1760px; height: 990px;
-  border-radius: 20px; overflow: hidden;
+  /* Full frame. An inset panel was tried first, on the idea that the push
+     would travel into the margin rather than slice the top bar off. It did
+     the opposite: the margin is exactly the gap a pan drags the background
+     into, and covering it again cost more zoom than the inset ever saved. */
+  width: 1920px; height: 1080px;
+  overflow: hidden;
   background: var(--panel);
   box-shadow: 0 70px 160px -50px rgba(0,0,0,0.95), 0 0 0 1px rgba(150,180,215,0.10);
   will-change: transform, opacity;
@@ -286,12 +288,24 @@ function screenScene({ seconds, img, heading, sub, from, to, callout, counter, r
     return (f, p) => {
       /* Camera: a slow continuous move across the whole shot. */
       const t = easeInOut(p);
-      const sc = lerp(from.s, to.s, t);
       const x = lerp(from.x, to.x, t);
-      const y = lerp(from.y, to.y, t);
       const intro = spring(seg(f, 0, 30));
-      panel.style.transform =
-        `translate3d(${x}px, ${y + lerp(40, 0, intro)}px, 0) scale(${sc * lerp(0.985, 1, intro)})`;
+      /* A small rise on entry. It used to be 40px, but the camera now pays for
+       * every pixel of offset in scale, and 40 bought a visible lurch. */
+      const y = lerp(from.y, to.y, t) + lerp(18, 0, intro);
+
+      /* Every pixel of pan has to be paid for in scale, or the panel slides
+       * off its own frame and the background shows through at the edge. The
+       * pan is what the shot is composed around, so the scale is raised to
+       * whatever covers it - including during the intro, which starts a touch
+       * small and a touch low. */
+      const need = Math.max(
+        (960 + Math.abs(x)) / 960,
+        (540 + Math.abs(y)) / 540,
+      );
+      const sc = Math.max(lerp(from.s, to.s, t) * lerp(0.985, 1, intro), need * 1.006);
+
+      panel.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${sc})`;
       panel.style.opacity = Math.min(1, seg(f, 0, 12));
 
       const lp = seg(f, 12, 42);
