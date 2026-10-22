@@ -270,21 +270,35 @@ async function main() {
      contradicted. */
   const facts = await cdp.evaluate(`
     const txt = (sel) => { const e = document.querySelector(sel); return e ? e.textContent.trim() : null; };
-    const num = (s) => { if (!s) return null; const m = s.replace(/,/g,'').match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
+    /* No regex here: it has to survive being passed through a shell, a JSON
+       payload and a template literal, and escaping it through all three is
+       how the first attempt silently returned nulls. */
+    const num = (s) => {
+      if (!s) return null;
+      let out = '';
+      for (const ch of String(s)) {
+        if ((ch >= '0' && ch <= '9') || ch === '.') out += ch;
+        else if (ch === ',') continue;          /* 17,002 is one number */
+        else if (out.length) break;
+      }
+      return out.length ? Number(out) : null;
+    };
     document.querySelector('.tabbar [data-view="pulse"]').click();
-    await new Promise(r => setTimeout(r, 900));
+    await new Promise(r => setTimeout(r, 1000));
     const ici = num(txt('.ici-score'));
     const state = txt('.ici-state');
-    const dhw = num([...document.querySelectorAll('.metric-value')].map(e=>e.textContent).find(t=>/C-weeks/.test(t)) || '');
+    const vals = [...document.querySelectorAll('.metric-value')].map(e => e.textContent.trim());
+    const dhw = num(vals.find(t => t.indexOf('C-weeks') >= 0));
     document.querySelector('.tabbar [data-view="grid"]').click();
-    await new Promise(r => setTimeout(r, 900));
+    await new Promise(r => setTimeout(r, 1000));
     const noPower = num(txt('#view-grid .metric-value'));
     document.querySelector('.tabbar [data-view="model"]').click();
-    await new Promise(r => setTimeout(r, 1200));
-    const metrics = [...document.querySelectorAll('#view-model .metric-value')].map(e=>e.textContent.trim());
-    const auc = num(metrics[0]);
-    return { ici, state, dhw, noPower, auc };
-  `).catch(() => ({}));
+    await new Promise(r => setTimeout(r, 1400));
+    const mm = [...document.querySelectorAll('#view-model .metric-value')].map(e => e.textContent.trim());
+    const auc = num(mm[0]);
+    const exposed = num(txt('#sc-exposed'));
+    return { ici, state, dhw, noPower, auc, exposed };
+  `).catch((e) => ({ error: String(e.message) }));
 
   writeFileSync(resolve(OUT, 'facts.json'), JSON.stringify(facts, null, 2));
   console.log('  facts:', JSON.stringify(facts));

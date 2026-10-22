@@ -66,8 +66,10 @@ h2 { font-size: 62px; font-weight: 650; letter-spacing: -0.028em; line-height: 1
 .panel-wrap { position: absolute; inset: 0; display: grid; place-items: center; }
 .panel {
   position: relative;
-  width: 1920px; height: 1080px;
-  border-radius: 22px; overflow: hidden;
+  /* Inset, so the push below travels into margin instead of slicing the
+     top bar and the sidebar off the interface being shown. */
+  width: 1760px; height: 990px;
+  border-radius: 20px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 70px 160px -50px rgba(0,0,0,0.95), 0 0 0 1px rgba(150,180,215,0.10);
   will-change: transform, opacity;
@@ -101,6 +103,14 @@ h2 { font-size: 62px; font-weight: 650; letter-spacing: -0.028em; line-height: 1
 .stat .t { font-size: 21px; color: var(--muted); margin-top: 12px; max-width: 360px; line-height: 1.4; }
 
 /* ---- lower third ------------------------------------------------------- */
+/* The lower third sits over live interface, so it needs its own ground.
+   Without this the caption fights whatever table happens to be behind it. */
+#scrim {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 340px;
+  background: linear-gradient(to top, rgba(4,7,11,0.96) 0%, rgba(4,7,11,0.82) 38%,
+                                      rgba(4,7,11,0.40) 68%, transparent 100%);
+  pointer-events: none;
+}
 #lower {
   position: absolute; left: 104px; bottom: 96px; will-change: transform, opacity;
 }
@@ -160,6 +170,10 @@ const fmt = (n) => Math.round(n).toLocaleString('en-US');
    Scene definitions
    ========================================================================== */
 const CAP = '../../../_cap/';
+
+/* Filled from _cap/facts.json before the first seek, so every number printed
+   beside a screenshot is the number that screenshot is showing. */
+window.FACTS = { ici: 0, dhw: 0, auc: 0, noPower: 0, exposed: 0, state: '' };
 
 /** Build word spans so a heading can rise word by word. */
 function words(text) {
@@ -253,6 +267,7 @@ function screenScene({ seconds, img, heading, sub, from, to, callout, counter, r
           <div class="value mono" data-cv style="color:${callout.color || 'var(--ink)'}">${callout.value || ''}</div>
           ${callout.sub ? `<div class="sub">${callout.sub}</div>` : ''}
         </div>` : ''}
+      <div id="scrim" data-scrim></div>
       <div id="lower" data-lower>
         <div class="bar" data-bar></div>
         <div class="h">${heading}</div>
@@ -261,6 +276,7 @@ function screenScene({ seconds, img, heading, sub, from, to, callout, counter, r
 
     const panel = el.querySelector('[data-p]');
     const low = el.querySelector('[data-lower]');
+    const scrim = el.querySelector('[data-scrim]');
     const bar = el.querySelector('[data-bar]');
     const cal = el.querySelector('[data-c]');
     const cv = el.querySelector('[data-cv]');
@@ -279,6 +295,7 @@ function screenScene({ seconds, img, heading, sub, from, to, callout, counter, r
       panel.style.opacity = Math.min(1, seg(f, 0, 12));
 
       const lp = seg(f, 12, 42);
+      if (scrim) scrim.style.opacity = lp;
       low.style.opacity = lp;
       low.style.transform = `translateY(${lerp(34, 0, easeOutQuint(lp))}px)`;
       bar.style.height = `${lerp(0, 74, easeOut(seg(f, 16, 44)))}px`;
@@ -290,11 +307,11 @@ function screenScene({ seconds, img, heading, sub, from, to, callout, counter, r
           `translateY(${lerp(28, 0, cp)}px) scale(${lerp(0.94, 1, cp)})`;
       }
       if (cv && counter) {
+        const target = counter.key ? (window.FACTS[counter.key] || 0) : counter.to;
         const q = easeOutQuint(seg(f, 40, 95));
-        cv.textContent = counter.prefix ? counter.prefix + fmt(counter.to * q)
-          : (counter.decimals
-            ? (counter.to * q).toFixed(counter.decimals)
-            : fmt(counter.to * q)) + (counter.suffix || '');
+        cv.textContent = (counter.decimals
+          ? (target * q).toFixed(counter.decimals)
+          : fmt(target * q)) + (counter.suffix || '');
       }
       if (rc) {
         const r = easeOut(seg(f, 30, 72));
@@ -313,7 +330,7 @@ screenScene({
   from: { s: 1.06, x: 0, y: 30 }, to: { s: 1.13, x: 90, y: 10 },
   ring: { x: 700, y: 470 },
   callout: { x: 1180, y: 300, label: 'Island condition index', value: '0', sub: 'Emergency', color: 'var(--crit)' },
-  counter: { to: 24 },
+  counter: { key: 'ici' },
 });
 
 screenScene({
@@ -322,7 +339,7 @@ screenScene({
   sub: 'Degree heating weeks from sea surface temperature, on NOAA Coral Reef Watch thresholds',
   from: { s: 1.10, x: -120, y: 0 }, to: { s: 1.16, x: -220, y: -30 },
   callout: { x: 150, y: 220, label: 'Accumulated heat', value: '0', sub: 'Alert Level 1 — bleaching likely', color: 'var(--warn)' },
-  counter: { to: 6.4, decimals: 1, suffix: ' °C-wk' },
+  counter: { key: 'dhw', decimals: 1, suffix: ' °C-wk' },
 });
 
 screenScene({
@@ -361,7 +378,7 @@ screenScene({
   sub: 'Logistic regression over 4,300 days of ERA5 reanalysis, retrained on the device',
   from: { s: 1.06, x: 0, y: 0 }, to: { s: 1.14, x: -70, y: 30 },
   callout: { x: 1230, y: 250, label: 'Held-out AUC', value: '0', sub: '861 days, strictly later in time', color: 'var(--ok)' },
-  counter: { to: 0.993, decimals: 3 },
+  counter: { key: 'auc', decimals: 3 },
 });
 
 screenScene({
@@ -370,7 +387,7 @@ screenScene({
   sub: 'Move a slider and all 31 villages re-score on every animation frame',
   from: { s: 1.08, x: 0, y: -10 }, to: { s: 1.15, x: -40, y: -70 },
   callout: { x: 1200, y: 690, label: 'People exposed', value: '0', sub: 'moderate risk or above', color: 'var(--crit)' },
-  counter: { to: 43439 },
+  counter: { key: 'exposed' },
 });
 
 screenScene({
@@ -379,7 +396,7 @@ screenScene({
   sub: 'Resident reports rolled up to utility feeders, with outage history per village',
   from: { s: 1.06, x: 0, y: 0 }, to: { s: 1.13, x: 60, y: -30 },
   callout: { x: 1180, y: 250, label: 'Without power', value: '0', sub: 'across two feeders', color: 'var(--warn)' },
-  counter: { to: 17002 },
+  counter: { key: 'noPower' },
 });
 
 /* ---- closing ----------------------------------------------------------- */
@@ -462,8 +479,16 @@ window.seek = function (f) {
   prog.style.width = `${(f / TOTAL) * 1920}px`;
 };
 
-window.seek(0);
-window.__filmReady = true;
+/* Load the captured figures, then declare ready. The renderer waits on
+   __filmReady, so no frame is drawn before the numbers are in. */
+fetch(CAP + 'facts.json')
+  .then((r) => r.json())
+  .then((f) => { Object.assign(window.FACTS, f); })
+  .catch(() => { /* fall back to zeros rather than inventing values */ })
+  .finally(() => {
+    window.seek(0);
+    window.__filmReady = true;
+  });
 </script>
 </body>
 </html>
