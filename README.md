@@ -304,10 +304,21 @@ cached conditions, and keeps all stored reports and the trained model.
 ## Running it
 
 ```bash
+git clone https://github.com/PranavaKCode/saipan-observational-network.git
+cd saipan-observational-network
 python -m http.server 8777
 ```
 
-Then open `http://localhost:8777`. Any static server works. A service worker
+Then open `http://localhost:8777`.
+
+There is nothing to install. The one optional step is a map key: copy
+`js/carto-key.example.js` to `js/carto-key.js` and paste in a free
+[CARTO](https://carto.com/basemaps/) key, then restrict it to your own domain
+in their dashboard. Without it the app still runs — CARTO's raster endpoint
+serves unkeyed requests, and the default Esri imagery base needs no key at
+all. The key is deliberately not in this repository: the browser has to send
+it with every tile request, so it cannot be hidden from a determined reader,
+but it also should not be sitting in a public history for bots to harvest. Any static server works. A service worker
 needs `http://` or `https://` — opening `index.html` as a `file://` URL works
 but without offline caching.
 
