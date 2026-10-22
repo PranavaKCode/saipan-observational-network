@@ -231,17 +231,37 @@ def village_stats(island, change_db, post_db, pre_db, transform, shape):
 
 
 def write_overlay(change_db, shape):
-    """A transparent PNG of change magnitude, for the map overlay."""
+    """A transparent PNG of local change DENSITY, for the map overlay.
+
+    Per-pixel change at 30 m is sparse speckle - a couple of percent of the
+    image, scattered - which renders as noise and reads as nothing. Worse,
+    isolated single pixels over a threshold are exactly what radar speckle
+    produces by chance.
+
+    So the layer shows the fraction of pixels within a ~210 m neighbourhood
+    that exceed the threshold. Isolated hits wash out; genuine clusters come
+    through. That is both the legible rendering and the more defensible one.
+    """
     from PIL import Image
+    from scipy.ndimage import uniform_filter
 
     width, height = shape
     mag = np.abs(change_db)
-    alpha = np.clip((mag - CHANGE_DB) / 9.0, 0, 1)
-    alpha[~np.isfinite(mag)] = 0
 
-    # Amber through red, matching the app's warn/crit tokens.
-    t = np.clip((mag - CHANGE_DB) / 9.0, 0, 1)
-    t[~np.isfinite(t)] = 0
+    changed = np.where(np.isfinite(mag), (mag >= CHANGE_DB).astype('float32'), 0.0)
+    land = np.isfinite(mag)
+
+    WINDOW = 7                      # ~210 m at 30 m pixels
+    density = uniform_filter(changed, size=WINDOW, mode='constant', cval=0.0)
+    # Normalise by how much land is in the window, so the coast is not dimmed
+    # simply for having sea on one side.
+    support = uniform_filter(land.astype('float32'), size=WINDOW, mode='constant', cval=0.0)
+    density = np.where(support > 0.25, density / np.maximum(support, 1e-6), 0.0)
+
+    DENSITY_FLOOR = 0.12
+    t = np.clip((density - DENSITY_FLOOR) / (0.55 - DENSITY_FLOOR), 0, 1)
+    alpha = np.where(density >= DENSITY_FLOOR, 0.30 + 0.65 * t, 0.0)
+    alpha[~land] = 0
     r = (212 + (180 - 212) * t)
     g = (106 + (33 - 106) * t)
     b = (31 + (63 - 31) * t)
@@ -250,7 +270,7 @@ def write_overlay(change_db, shape):
     rgba[..., 0] = r.astype('uint8')
     rgba[..., 1] = g.astype('uint8')
     rgba[..., 2] = b.astype('uint8')
-    rgba[..., 3] = (alpha * 235).astype('uint8')
+    rgba[..., 3] = (alpha * 250).astype('uint8')
 
     img = Image.fromarray(rgba, 'RGBA')
 
@@ -351,6 +371,8 @@ def main():
             'village_radius_m': VILLAGE_RADIUS_M,
         },
         'overlay': {
+            'shows': ('fraction of pixels in a ~210 m neighbourhood exceeding the change '
+                      'threshold, not per-pixel change: isolated hits at 30 m are mostly speckle'),
             'image': 'data/sar-yutu-change.png',
             'bounds': [[BBOX[1], BBOX[0]], [BBOX[3], BBOX[2]]],
         },

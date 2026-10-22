@@ -16,3 +16,8 @@ node_modules/
 # The deployment's CARTO basemap key. Copy js/carto-key.example.js
 # to this path and add your own; see js/config.js for the reasoning.
 js/carto-key.js
+
+# Captured frames and rendered video (regenerate with tools/capture_demo.mjs
+# and tools/build_demo_video.py)
+_cap/
+*.mp4

@@ -90,7 +90,7 @@ async function boot() {
   render();                      // paint the shell immediately
   switchView('pulse');           // same arrival treatment as any other view
 
-  handleDeepLink();              // honour the PWA shortcuts
+  await handleDeepLink();        // honour the PWA shortcuts
   await refreshFeeds();          // then fill it with live data
   await bootModel();
   registerServiceWorker();
@@ -100,8 +100,15 @@ async function boot() {
 /* The manifest advertises shortcuts straight to a flood report, a power report
    and the grid view. Those are promises to the home screen, so they have to
    actually land somewhere. */
-function handleDeepLink() {
+async function handleDeepLink() {
   const params = new URLSearchParams(location.search);
+
+  /* ?demo=1 loads the scenario on arrival. The demo data lives in IndexedDB
+     per device, so without this a fresh machine - a judge's laptop, a capture
+     run, a phone passed across a table - opens to a correct but empty app. */
+  if (params.get('demo') === '1' && !S.reports.some((r) => r.demo)) {
+    await loadDemoScenario();
+  }
 
   const view = params.get('view');
   if (view && document.getElementById('view-' + view)) switchView(view);
@@ -860,11 +867,12 @@ function renderMapView() {
   }
 
   if (S.map) {
+    /* Radar first: it is background context under the markers, not over them. */
+    S.map.drawSar(S.sar);
     S.map.drawRisk(S.derived.risk);
     S.map.drawReports(S.reports, S.science.report_categories);
     S.map.drawGrid(S.derived.grid, S.island);
     S.map.drawReefs(S.science.reef_sites, S.derived.dhw ? S.derived.dhw.alert.level : 0);
-    S.map.drawSar(S.sar);
     paintLegend();
   }
 }

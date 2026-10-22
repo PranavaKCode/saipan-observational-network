@@ -16,7 +16,7 @@
                     never silently passes old numbers off as current.
    ========================================================================== */
 
-const VERSION = 'son-v15';
+const VERSION = 'son-v16';
 const SHELL_CACHE = VERSION + '-shell';
 const TILE_CACHE = VERSION + '-tiles';
 const FEED_CACHE = VERSION + '-feeds';
