@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Saipan Observational Network</title>
+<meta name="description" content="Citizen science and utility accountability for Saipan: satellite imagery, a browser-trained flood model, and offline-first field reporting.">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="app.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+
+<link rel="preconnect" href="https://api.open-meteo.com">
+<link rel="preconnect" href="https://gibs.earthdata.nasa.gov">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+      integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
+      crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="css/son.css?v=7">
+
+<script>
+  /* Apply the saved theme before first paint, so switching never flashes. */
+  try {
+    var t = localStorage.getItem('son-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) { /* private mode: fall back to the system setting */ }
+</script>
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <span class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 28 28" fill="none">
+          <!-- Saipan: long axis running NNE, lagoon on the west flank -->
+          <path d="M17.6 2.6c2.4 1.5 3.1 4.6 2.4 7.7-.7 2.9-2.2 5.1-2 7.8.2 2.7 1.9 4.7 1.1 6.8-.8 2-3.3 2.8-5.3 1.7-2.4-1.2-2.9-3.9-4.3-6.1-1.4-2.3-3.7-3.8-4-6.5-.3-3 2-5.1 4.2-7 2.3-1.9 4.4-4.8 7.9-4.4Z"
+                fill="currentColor" opacity="0.18"/>
+          <path d="M17.6 2.6c2.4 1.5 3.1 4.6 2.4 7.7-.7 2.9-2.2 5.1-2 7.8.2 2.7 1.9 4.7 1.1 6.8-.8 2-3.3 2.8-5.3 1.7-2.4-1.2-2.9-3.9-4.3-6.1-1.4-2.3-3.7-3.8-4-6.5-.3-3 2-5.1 4.2-7 2.3-1.9 4.4-4.8 7.9-4.4Z"
+                stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <circle cx="10.2" cy="14.6" r="2.4" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">Saipan Observational Network</span>
+        <span class="brand-sub">Northern Mariana Islands</span>
+      </span>
+    </span>
+
+    <span class="topbar-spacer"></span>
+
+    <span class="net-pill" id="net-pill" data-state="online" title="Connection state">
+      <span class="dot"></span>
+      <span class="net-icon"></span>
+      <span class="net-label">Live</span>
+      <span class="queue-badge" id="queue-badge" data-count="0" title="Reports held on this device"></span>
+    </span>
+
+    <button class="icon-btn" id="theme-btn" aria-label="Switch between light and dark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2M6.1 6.1 4.5 4.5M19.5 19.5l-1.6-1.6M17.9 6.1l1.6-1.6M4.5 19.5l1.6-1.6"/>
+      </svg>
+    </button>
+
+    <button class="icon-btn" id="settings-btn" aria-label="Settings and data provenance">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 14.5a1.6 1.6 0 0 0 .33 1.78l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.78-.33 1.6 1.6 0 0 0-1 1.47V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.78.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.72 15a1.6 1.6 0 0 0-1.47-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.33-1.78l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9 4.72a1.6 1.6 0 0 0 1-1.47V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.47 1.6 1.6 0 0 0 1.78-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 19.4 9v.09a1.6 1.6 0 0 0 1.47 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/>
+      </svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="view active" id="view-pulse" aria-label="Island pulse">
+      <div class="card"><div class="skeleton" style="height:148px"></div></div>
+    </section>
+
+    <section class="view" id="view-map" aria-label="Map"></section>
+    <section class="view" id="view-field" aria-label="Field reporting"></section>
+    <section class="view" id="view-model" aria-label="Flood model"></section>
+    <section class="view" id="view-grid" aria-label="Grid and water status"></section>
+  </main>
+
+  <nav class="tabbar" aria-label="Main navigation">
+    <button data-view="pulse" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 12h3.6l2.4 6.5L13 5.5l2.3 6.5H21"/>
+      </svg>
+      Pulse
+    </button>
+    <button data-view="map">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6 9 3.5Z"/><path d="M9 3.5V18M15 6v14.5"/>
+      </svg>
+      Map
+    </button>
+    <button data-view="field">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 21s7-5.8 7-11a7 7 0 1 0-14 0c0 5.2 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/>
+      </svg>
+      Report
+      <span class="tab-dot" id="tab-dot-field" data-count="0"></span>
+    </button>
+    <button data-view="model">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19V8M9.5 19V4M15 19v-7M20.5 19v-9"/>
+      </svg>
+      Model
+    </button>
+    <button data-view="grid">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M13 2.5 5.5 13H11l-1 8.5L18.5 11H13l1-8.5Z"/>
+      </svg>
+      Grid
+    </button>
+  </nav>
+
+  <div id="toasts" aria-live="polite" aria-atomic="false"></div>
+</div>
+
+<noscript>
+  <div style="padding:24px;font-family:system-ui">
+    <h1>Saipan Observational Network</h1>
+    <p>This application needs JavaScript: the flood model trains in your browser and reports are
+    stored on your device.</p>
+  </div>
+</noscript>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+        integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

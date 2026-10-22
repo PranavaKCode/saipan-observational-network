@@ -1,0 +1,18 @@
+# Vercel project linkage (machine-local)
+.vercel
+
+# Scratch data downloaded by tools/refresh_terrain.py. Regenerate with the
+# script rather than committing a few hundred KB of cached API responses.
+tools/.cache/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Not used by this project, but harmless to guard against
+node_modules/
+
+# The deployment's CARTO basemap key. Copy js/carto-key.example.js
+# to this path and add your own; see js/config.js for the reasoning.
+js/carto-key.js

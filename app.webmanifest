@@ -1,0 +1,21 @@
+{
+  "name": "Saipan Observational Network",
+  "short_name": "SON",
+  "description": "Citizen science and utility accountability for Saipan: satellite imagery, a browser-trained flood model, and offline-first field reporting.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#05131c",
+  "theme_color": "#05131c",
+  "categories": ["utilities", "weather", "education"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Report flooding", "short_name": "Flood", "url": "./index.html?report=flood" },
+    { "name": "Report power outage", "short_name": "Power", "url": "./index.html?report=power" },
+    { "name": "Grid status", "short_name": "Grid", "url": "./index.html?view=grid" }
+  ]
+}

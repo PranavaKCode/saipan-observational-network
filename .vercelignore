@@ -1,0 +1,7 @@
+# Scratch data pulled by the terrain tooling; not part of the site.
+tools/.cache/
+# Local dev only
+.claude/
+node_modules/
+.vercel/
+*.log
