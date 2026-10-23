@@ -557,13 +557,26 @@ main { flex: 1; min-width: 0; }
   font-weight: 550;
 }
 
+/* A segmented control's labels are nowrap, so the control has a hard minimum
+   width that it will not shrink below. Sitting in a flex row next to a
+   heading, on a phone, that minimum pushed the whole document sideways: the
+   tab bar lost Grid off the right edge, and the heading beside it collapsed
+   into its own ellipsis. So the row is allowed to wrap, and the control
+   scrolls within its own bounds instead of widening its parent. */
+.card-head { flex-wrap: wrap; }
+
 .seg {
   display: inline-flex;
   padding: 2px;
   background: var(--surface-2);
   border-radius: 99px;
   gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.seg::-webkit-scrollbar { display: none; }
 .seg button {
   padding: 0.35rem 0.75rem;
   border-radius: 99px;

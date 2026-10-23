@@ -25,7 +25,7 @@ are never converting while the camera rolls.
 
 ---
 
-## 0:24 – 0:48 · `_cap/01-pulse.png`
+## 0:24 – 0:48 · `_cap-mobile/01-pulse.png`
 
 > This is the island pulse. Every feed on it is live — NOAA, the Weather
 > Service, NASA, Open-Meteo.
@@ -38,16 +38,16 @@ are never converting while the camera rolls.
 
 ---
 
-## 0:48 – 1:04 · `_cap/02-reef.png` — punch in on the Coral heat stress card
+## 0:48 – 1:04 · `_cap-mobile/02-reef.png` — punch in on the Coral heat stress card
 
 > The coral side is computed, not copied. Degree heating weeks, straight from
 > sea surface temperature, on NOAA's Coral Reef Watch thresholds.
 >
-> Six point four. Alert Level One — bleaching likely.
+> Six point two. Alert Level One — bleaching likely.
 
 ---
 
-## 1:04 – 1:26 · `_cap/03-map.png`
+## 1:04 – 1:26 · `_cap-mobile/03-map.png`
 
 > On the map, risk isn't dots on villages. Village scores get interpolated into
 > a continuous surface and clipped to the real surveyed coastline —
@@ -56,7 +56,7 @@ are never converting while the camera rolls.
 
 ---
 
-## 1:26 – 1:48 · `_cap/04-map-sar.png`
+## 1:26 – 1:48 · `_cap-mobile/04-map-sar.png`
 
 > This layer is radar. Sentinel-1 bounces microwaves off the ground, so it sees
 > straight through storm cloud.
@@ -66,7 +66,7 @@ are never converting while the camera rolls.
 
 ---
 
-## 1:48 – 2:08 · `_cap/06-report.png`
+## 1:48 – 2:08 · `_cap-mobile/06-report.png`
 
 > Residents report what they see. Eleven categories — and every one writes to
 > the device before it ever tries the network.
@@ -77,18 +77,18 @@ are never converting while the camera rolls.
 
 ---
 
-## 2:08 – 2:20 · `_cap/07-report-list.png`
+## 2:08 – 2:20 · `_cap-mobile/07-report-list.png`
 
 > And it doesn't trust one report. Two independent observers, within a
 > kilometre and a half and six hours, before anything gets upgraded.
 
 ---
 
-## 2:20 – 2:42 · `_cap/09-model.png`, then `_cap/10-model-dials.png`
+## 2:20 – 2:42 · `_cap-mobile/09-model.png`, then `_cap-mobile/10-model-dials.png`
 
 > The model trains in your browser. Three thousand four hundred days of
-> reanalysis, with eight hundred sixty-one held back, strictly later in
-> time. Held-out AUC, nine eight two. *(cuttable: the day counts, keep the AUC)*
+> reanalysis, with eight hundred sixty-two held back, strictly later in
+> time. Held-out AUC, nine eight five. *(cuttable: the day counts, keep the AUC)*
 >
 > Dial a storm, and all thirty-one villages re-score as you drag.
 
@@ -96,7 +96,7 @@ are never converting while the camera rolls.
 
 ---
 
-## 2:42 – 3:00 · `_cap/12-grid.png`, then end card
+## 2:42 – 3:00 · `_cap-mobile/12-grid.png`, then end card
 
 > Which closes the loop. Resident reports roll up into a public grid map —
 > seventeen thousand people without power, by feeder, on the record.
@@ -109,13 +109,27 @@ are never converting while the camera rolls.
 
 ## Notes
 
-**Every number here is on screen behind you.** Twenty-four, six point four,
-nine eight two, thirty-one villages, seventeen thousand — they all match the
-captures, so nothing you say contradicts what the viewer is reading.
+**Every number here is on screen behind you** — twenty-four, six point two,
+nine eight five, thirty-one villages, seventeen thousand — so nothing you say
+contradicts what the viewer is reading.
 
-**The captures are 1920×1080 desktop**, which suits a browser frame beside you
-rather than the portrait phone mockup in your reference. The app does have a
-mobile layout; mobile-width captures would need a separate pass.
+**But the figures are live, and they move.** The model retrains on each load
+against a record that grows by a day, every day, and the reef number tracks
+sea surface temperature. Between the desktop pass and the mobile one the AUC
+went .982 → .985, the held-out window 861 → 862 days, and heat stress 6.4 →
+6.2. So if you recapture before recording, read the new numbers off the
+screenshots and correct these three lines. `_cap-mobile/facts.json` has them
+extracted for you.
+
+**Captures are `_cap-mobile/`**, 1179×2556 — an iPhone 15 Pro viewport at 3×,
+sized for a portrait device mockup. `_cap/` holds the 1920×1080 desktop set if
+you ever want a browser frame instead.
+
+Regenerate either with the dev server running:
+
+```bash
+node tools/capture_demo.mjs --mobile
+```
 
 **`saipan-observational-network.mp4`** is the 54-second cut of the same beats
 with motion. Useful as b-roll under the middle section if a static screenshot

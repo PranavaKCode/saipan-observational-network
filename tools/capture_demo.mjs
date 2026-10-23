@@ -18,11 +18,18 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const BASE = process.argv[2] || 'http://localhost:8781';
-const OUT = resolve(process.argv[3] || '../_cap');
+/* --mobile shoots the phone layout instead: an iPhone 15 Pro viewport at its
+ * real pixel density, which is what a portrait device mockup wants. The frame
+ * list below needs no changes for it - the tab bar is in the document at every
+ * width, and the desktop side rail is only that same nav restyled by a media
+ * query, so every selector here still finds its target. */
+const MOBILE = process.argv.includes('--mobile');
+const POSITIONAL = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+
+const BASE = POSITIONAL[0] || 'http://localhost:8781';
+const OUT = resolve(POSITIONAL[1] || (MOBILE ? '../_cap-mobile' : '../_cap'));
 const PORT = 9222;
-const W = 1920;
-const H = 1080;
+const [W, H, DSF] = MOBILE ? [393, 852, 3] : [1920, 1080, 1];
 
 const CHROME_CANDIDATES = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -110,12 +117,14 @@ const FRAMES = [
   },
   {
     id: '03-map',
+    mobileScroll: '#map',
     action: "document.querySelector('.tabbar [data-view=\"map\"]').click();",
     ready: "document.querySelectorAll('.leaflet-tile-loaded').length > 4",
     settle: 3500,
   },
   {
     id: '04-map-sar',
+    mobileScroll: '#map',
     /* Clear the stage: the radar beat is about the radar, so the model circles
        and report pins come off and the plain basemap goes under it. */
     action: `for (const k of ['risk','reports']) { const c=document.querySelector('[data-overlay="'+k+'"]'); if (c && c.classList.contains('active')) c.click(); }
@@ -127,6 +136,7 @@ const FRAMES = [
   },
   {
     id: '05-map-yutu',
+    mobileScroll: '#map',
     action: `const s=document.querySelector('[data-overlay="sar"]'); if(s&&s.classList.contains('active')) s.click();
              for (const k of ['risk','reports']) { const c=document.querySelector('[data-overlay="'+k+'"]'); if (c && !c.classList.contains('active')) c.click(); }
              const img=document.querySelector('[data-base="esri"]'); if (img) img.click();
@@ -201,12 +211,12 @@ async function main() {
   if (!chrome) throw new Error('Chrome not found');
   mkdirSync(OUT, { recursive: true });
 
-  console.log(`capturing ${BASE} at ${W}x${H}`);
+  console.log(`capturing ${BASE} at ${W}x${H}${DSF > 1 ? ` @${DSF}x` : ""} -> ${OUT}`);
   const proc = spawn(chrome, [
     '--headless=new',
     '--disable-gpu',
     '--hide-scrollbars',
-    '--force-device-scale-factor=1',
+    `--force-device-scale-factor=${DSF}`,
     '--force-color-profile=srgb',
     `--window-size=${W},${H}`,
     `--remote-debugging-port=${PORT}`,
@@ -237,7 +247,7 @@ async function main() {
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: W, height: H, deviceScaleFactor: 1, mobile: false,
+    width: W, height: H, deviceScaleFactor: DSF, mobile: MOBILE,
   });
 
   const manifest = [];
@@ -250,6 +260,18 @@ async function main() {
       }
       if (f.action) { await cdp.evaluate(f.action); }
       if (f.ready) { await cdp.waitFor(f.ready, { label: f.id }); }
+      /* A phone screen is a third of the desktop's height, so a view that
+         frames well at 1080 can put its subject below the fold at 852. Where
+         a frame names the element it is actually about, pull that to the top
+         on mobile only - the desktop framing the film was cut against stays
+         exactly as it was. */
+      if (MOBILE && f.mobileScroll) {
+        await cdp.evaluate(
+          `const e = document.querySelector(${JSON.stringify(f.mobileScroll)});
+           if (e) e.scrollIntoView({ block: 'start' });
+           return 1;`);
+        await sleep(600);
+      }
       await sleep(f.settle ?? 1200);
       /* Transient toasts are not part of the interface being shown. */
       await cdp.evaluate("const t=document.getElementById('toasts'); if(t) t.innerHTML=''; return 1;");
